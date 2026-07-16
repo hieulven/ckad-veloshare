@@ -1,0 +1,41 @@
+# Values for the pricing subchart.
+# Everything that varies for pricing lives here: image, port, env, replicas,
+# resources, and probe paths. `.Values.global.*` (registry/tag/pullPolicy/
+# namespace) comes from the umbrella chart.
+
+# Name resources by the bare service name so in-cluster DNS matches CLAUDE.md's
+# http://<service>.veloshare.svc.cluster.local convention.
+fullnameOverride: pricing
+
+replicaCount: 1
+
+image:
+  repository: pricing
+
+service:
+  port: 80
+
+containerPort: 8000
+
+probePath: /healthz
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 128Mi
+
+fare:
+  unlockFeeCents: 100
+  tierRatesJson: '{"standard": 15, "member": 8, "day_pass": 5}'
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+
+logging:
+  enabled: true   # effective flag is global.logging.enabled

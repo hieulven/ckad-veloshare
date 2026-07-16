@@ -1,0 +1,6 @@
+apiVersion: v2
+name: station
+description: Station and dock inventory service (FastAPI).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

@@ -1,0 +1,57 @@
+# VeloShare umbrella values.
+#
+# This file owns the GLOBAL settings shared by every subchart and holds a
+# per-service override block (one key per subchart). For now the per-service
+# blocks are intentionally empty — each will be filled in as its subchart is
+# implemented, following the build order in CLAUDE.md.
+
+# ---------------------------------------------------------------------------
+# Global values — visible to every subchart as `.Values.global.*`.
+# ---------------------------------------------------------------------------
+global:
+  # Single namespace for the whole platform (created via --create-namespace).
+  namespace: veloshare
+
+  # Container image registry + tag shared by all app images. Subcharts build
+  # their full image reference as `<registry>/<repository>:<tag>`.
+  image:
+    registry: veloshare
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+
+  # Ingress for the platform. An empty `host` leaves the rule host-less so it
+  # matches ANY Host header — http://localhost/ works straight from a browser
+  # with no /etc/hosts entry. Set host: veloshare.local to restrict it.
+  ingress:
+    enabled: true
+    host: ""
+    className: nginx
+
+  logging:
+    enabled: true
+
+  # NOTE: there is deliberately no auth/credential config here.
+  # Every secret (JWT signing key, admin login, DB passwords) lives ONLY in the
+  # local, gitignored env/*.env files and is applied straight to the cluster as
+  # a Secret by `make secrets`. Helm never reads or renders a credential, so
+  # nothing sensitive can leak into a rendered manifest or into git.
+  # See env/*.env.template and the "Quản lý secret" section of README.md.
+
+# ---------------------------------------------------------------------------
+# Per-service override blocks. Keys must match the subchart names so values
+# land in the right subchart. Left empty until each subchart is implemented.
+# ---------------------------------------------------------------------------
+pricing:
+  image:
+    repository: pricing
+  fare:
+    unlockFeeCents: 100
+    tierRatesJson: '{"standard": 15, "member": 8, "day_pass": 5}'
+postgres: {}
+rider: {}
+station: {}
+trip: {}
+redis: {}
+fleet-monitor: {}
+frontend: {}
+logging: {}

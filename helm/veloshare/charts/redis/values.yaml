@@ -1,0 +1,28 @@
+# Values for the redis subchart.
+# Redis is a plain Deployment (not a StatefulSet) per CLAUDE.md, using its own
+# public image — NOT the veloshare registry. `.Values.global.*`
+# (registry/tag/pullPolicy/namespace) comes from the umbrella chart but is
+# only used here for pullPolicy and namespace.
+
+# Name resources by the bare service name so in-cluster DNS matches CLAUDE.md's
+# http://<service>.veloshare.svc.cluster.local convention.
+fullnameOverride: redis
+
+replicaCount: 1
+
+image:
+  repository: redis
+  tag: "7-alpine"
+
+service:
+  port: 6379
+
+containerPort: 6379
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 128Mi

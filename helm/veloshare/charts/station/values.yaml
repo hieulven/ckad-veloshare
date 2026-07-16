@@ -1,0 +1,37 @@
+# Values for the station subchart.
+# Everything that varies for station lives here: image, port, env, replicas,
+# resources, and probe paths. `.Values.global.*` (registry/tag/pullPolicy/
+# namespace) comes from the umbrella chart.
+
+# Name resources by the bare service name so in-cluster DNS matches CLAUDE.md's
+# http://<service>.veloshare.svc.cluster.local convention.
+fullnameOverride: station
+
+replicaCount: 1
+
+image:
+  repository: station
+
+service:
+  port: 80
+
+containerPort: 8000
+
+probePath: /healthz
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 128Mi
+
+# Dev-only placeholder credentials — matches the role created by the postgres
+# subchart's init.sql (schema-per-service, one DB user per service).
+# No DB config here. DB_HOST/PORT/NAME/USER/PASSWORD/SCHEMA come from the
+# `station-db` Secret, created outside Helm from env/station.env by
+# `make secrets`.
+
+logging:
+  enabled: true   # effective flag is global.logging.enabled

@@ -1,0 +1,39 @@
+apiVersion: v2
+name: veloshare
+description: VeloShare city bike-share platform — umbrella chart for the whole system.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+
+# Subchart dependencies. Each service (and the shared data layer) is a local
+# subchart vendored under charts/. They are wired here so the umbrella owns the
+# global values and pulls each piece in. Templates are filled in per the build
+# order in CLAUDE.md, one service at a time.
+dependencies:
+  - name: pricing
+    version: 0.1.0
+    repository: "file://charts/pricing"
+  - name: postgres
+    version: 0.1.0
+    repository: "file://charts/postgres"
+  - name: rider
+    version: 0.1.0
+    repository: "file://charts/rider"
+  - name: station
+    version: 0.1.0
+    repository: "file://charts/station"
+  - name: trip
+    version: 0.1.0
+    repository: "file://charts/trip"
+  - name: redis
+    version: 0.1.0
+    repository: "file://charts/redis"
+  - name: fleet-monitor
+    version: 0.1.0
+    repository: "file://charts/fleet-monitor"
+  - name: frontend
+    version: 0.1.0
+    repository: "file://charts/frontend"
+  - name: logging
+    version: 0.1.0
+    repository: "file://charts/logging"

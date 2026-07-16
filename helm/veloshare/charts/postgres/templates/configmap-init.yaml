@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "veloshare.fullname" . }}-init
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "veloshare.labels" . | nindent 4 }}
+data:
+  # Runs once, at first cluster init, via /docker-entrypoint-initdb.d.
+  # One schema + one LOGIN role per service (schema-per-service, per CLAUDE.md's
+  # database conventions).
+  #
+  # The role passwords are deliberately NOT in this chart. They are read at run
+  # time from the `postgres` Secret, which is created outside Helm from
+  # env/postgres.env by `make secrets` — so no credential lives in the chart or
+  # in git. A .sh file here is what lets us read them from the environment; a
+  # plain .sql file cannot.
+  init.sh: |
+    #!/bin/bash
+    set -euo pipefail
+
+    # schema + owning login role = one isolated tenant of the shared database
+    create_service_role() {
+      local schema="$1" role="$2" password="$3"
+      psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<EOSQL
+    CREATE SCHEMA IF NOT EXISTS ${schema};
+    CREATE ROLE ${role} LOGIN PASSWORD '${password}';
+    GRANT USAGE ON SCHEMA ${schema} TO ${role};
+    GRANT ALL ON SCHEMA ${schema} TO ${role};
+    ALTER ROLE ${role} SET search_path = ${schema};
+    EOSQL
+    }
+
+    create_service_role riders   rider   "${RIDER_PASSWORD}"
+    create_service_role stations station "${STATION_PASSWORD}"
+    create_service_role trips    trip    "${TRIP_PASSWORD}"

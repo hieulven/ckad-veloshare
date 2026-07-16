@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "veloshare.fullname" . }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "veloshare.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "veloshare.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "veloshare.selectorLabels" . | nindent 8 }}
+    spec:
+      securityContext:
+        fsGroup: 10001
+      initContainers:
+        - name: migrate
+          image: "postgres:16"
+          command:
+            - sh
+            - -c
+            - PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -f /migrations/migrate.sql
+          envFrom:
+            - secretRef:
+                name: {{ include "veloshare.fullname" . }}-db
+          volumeMounts:
+            - name: migration
+              mountPath: /migrations
+      containers:
+        - name: trip
+          image: "{{ .Values.global.image.registry }}/{{ .Values.image.repository }}:{{ .Values.global.image.tag }}"
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.containerPort }}
+          envFrom:
+            - secretRef:
+                name: {{ include "veloshare.fullname" . }}-db
+            - configMapRef:
+                name: {{ include "veloshare.fullname" . }}
+            - secretRef:
+                name: veloshare-auth
+          {{- if (.Values.global.logging).enabled }}
+          volumeMounts:
+            - name: logs
+              mountPath: /var/log/veloshare
+          {{- end }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probePath }}
+              port: {{ .Values.containerPort }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probePath }}
+              port: {{ .Values.containerPort }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+        {{- if (.Values.global.logging).enabled }}
+        {{- include "veloshare.loggingSidecar" . | nindent 8 }}
+        {{- end }}
+      volumes:
+        - name: migration
+          configMap:
+            name: {{ include "veloshare.fullname" . }}-migration
+        {{- if (.Values.global.logging).enabled }}
+        {{- include "veloshare.logVolumes" . | nindent 8 }}
+        {{- end }}

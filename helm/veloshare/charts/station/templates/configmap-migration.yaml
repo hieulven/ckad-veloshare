@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "veloshare.fullname" . }}-migration
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "veloshare.labels" . | nindent 4 }}
+data:
+  # Runs via an init container before the app starts. The station role's
+  # search_path already defaults to the stations schema (see the postgres
+  # subchart's init.sql), so the unqualified table name resolves there.
+  migrate.sql: |
+    CREATE TABLE IF NOT EXISTS stations (
+        id serial PRIMARY KEY,
+        name text NOT NULL,
+        capacity int NOT NULL,
+        docks_available int NOT NULL DEFAULT 0
+    );

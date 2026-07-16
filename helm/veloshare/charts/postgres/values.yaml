@@ -1,0 +1,30 @@
+# Values for the postgres subchart.
+# Shared Postgres StatefulSet (schema-per-service). Postgres is a public
+# image, not one of VeloShare's own services, so it is pulled straight from
+# `image.repository:image.tag` rather than `.Values.global.image.registry`.
+
+# Name resources by the bare name "postgres" so in-cluster DNS matches
+# CLAUDE.md's http://postgres.veloshare.svc.cluster.local convention.
+fullnameOverride: postgres
+
+image:
+  repository: postgres
+  tag: "16"
+
+containerPort: 5432
+
+storage: 1Gi
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Dev-only placeholder credentials — fine for a learning project, never use
+# these (or hardcode secrets like this) in anything real.
+# No credentials here. POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB and the
+# per-service role passwords used by init.sh come from the `postgres` Secret,
+# created outside Helm from env/postgres.env by `make secrets`.

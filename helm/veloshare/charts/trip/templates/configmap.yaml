@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "veloshare.fullname" . }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "veloshare.labels" . | nindent 4 }}
+data:
+  PRICING_URL: {{ .Values.deps.pricingUrl | quote }}
+  RIDER_URL: {{ .Values.deps.riderUrl | quote }}
+  REDIS_HOST: {{ .Values.deps.redisHost | quote }}
+  REDIS_PORT: {{ .Values.deps.redisPort | quote }}
+  ACTIVE_TTL_SECONDS: {{ .Values.deps.activeTtlSeconds | quote }}

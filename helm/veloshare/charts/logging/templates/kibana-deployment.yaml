@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  # Fixed name (not veloshare.fullname): reached via the stable DNS name
+  # "kibana" and to keep it visually paired with the fixed "elasticsearch"
+  # name in this same subchart.
+  name: kibana
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "veloshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kibana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "veloshare.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: kibana
+  template:
+    metadata:
+      labels:
+        {{- include "veloshare.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: kibana
+    spec:
+      containers:
+        - name: kibana
+          image: "{{ .Values.kibana.image.repository }}:{{ .Values.kibana.image.tag }}"
+          ports:
+            - name: http
+              containerPort: 5601
+          env:
+            - name: ELASTICSEARCH_HOSTS
+              value: http://elasticsearch:9200
+            - name: SERVER_BASEPATH
+              value: {{ .Values.kibana.basePath | quote }}
+            - name: SERVER_REWRITEBASEPATH
+              value: "true"
+            - name: SERVER_HOST
+              value: "0.0.0.0"
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.kibana.basePath }}/api/status
+              port: 5601
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 8
+          resources:
+            {{- toYaml .Values.kibana.resources | nindent 12 }}

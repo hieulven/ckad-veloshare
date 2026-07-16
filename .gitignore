@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Helm
+# Vendored chart archives + resolved deps (subcharts live in charts/ as sources).
+helm/**/charts/*.tgz
+helm/**/Chart.lock
+helm/**/requirements.lock
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Local env / secrets — never commit real credentials.
+# env/<service>.env holds each pod's config + credentials and is applied to the
+# cluster by `make secrets`. Only the *.env.template files are tracked.
+*.env
+.env
+env/*.env
+!env/*.env.template
+secrets.*.yaml
+.claude/settings.local.json

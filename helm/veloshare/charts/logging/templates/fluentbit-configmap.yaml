@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  # Fixed name: app-pod Fluent Bit sidecars mount this ConfigMap by this
+  # exact name, so it must not be derived from veloshare.fullname.
+  name: fluent-bit-config
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "veloshare.labels" . | nindent 4 }}
+data:
+  parsers.conf: |
+    [PARSER]
+        Name        json
+        Format      json
+        # App logs may emit either "time" or "timestamp" as the log field
+        # name; Time_Key only accepts one, so "time" is the default here —
+        # emit that field name from services for parsed timestamps.
+        Time_Key    time
+        Time_Format %Y-%m-%dT%H:%M:%S.%L%z
+        Time_Keep   On
+
+  fluent-bit.conf: |
+    [SERVICE]
+        Parsers_File parsers.conf
+        Flush        5
+        Log_Level    info
+        Daemon       Off
+
+    [INPUT]
+        Name              tail
+        Path              /var/log/veloshare/*.log
+        Parser            json
+        Tag               veloshare.*
+        Refresh_Interval  5
+        Read_from_Head    true
+        # Poll via stat instead of inotify. Every sidecar shares the host
+        # kernel's inotify instance budget (one kernel for all kind nodes), so
+        # inotify watchers exhaust it and the input dies with EMFILE "Too many
+        # open files" when several pods start at once.
+        Inotify_Watcher   Off
+
+    [OUTPUT]
+        Name                es
+        Match               *
+        Host                elasticsearch
+        Port                9200
+        Index               veloshare-logs
+        Suppress_Type_Name  On
+        Retry_Limit         False
