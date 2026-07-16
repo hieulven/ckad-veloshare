@@ -39,3 +39,22 @@ autoscaling:
 
 logging:
   enabled: true   # effective flag is global.logging.enabled
+
+# Demonstration init container: block pricing startup until the rider service is
+# reachable and the database is accepting connections. NOTE: pricing itself uses
+# neither — this is an example of the wait-for-dependency pattern and adds
+# artificial coupling. Set enabled: false to remove it.
+initCheck:
+  enabled: true
+  image: postgres:16          # provides pg_isready + bash (for the TCP wait)
+  riderHost: rider
+  riderPort: 80
+  dbHost: postgres
+  dbPort: 5432
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi

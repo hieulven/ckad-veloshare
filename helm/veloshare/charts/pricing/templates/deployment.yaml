@@ -17,6 +17,42 @@ spec:
     spec:
       securityContext:
         fsGroup: 10001
+      {{- if .Values.initCheck.enabled }}
+      # NOTE: pricing is stateless and depends on neither rider nor a database.
+      # This init container is a demonstration of the wait-for-dependency +
+      # db-connectivity-check pattern; it intentionally couples pricing to
+      # dependencies it does not actually use. Disable with initCheck.enabled=false.
+      initContainers:
+        - name: wait-for-deps
+          image: {{ .Values.initCheck.image | quote }}
+          command:
+            - bash
+            - -c
+            - |
+              echo "waiting for rider at ${RIDER_HOST}:${RIDER_PORT} ..."
+              until (exec 3<>/dev/tcp/${RIDER_HOST}/${RIDER_PORT}) 2>/dev/null; do
+                echo "  rider not reachable yet, retrying in 2s"; sleep 2
+              done
+              exec 3>&- 2>/dev/null || true
+              echo "rider is reachable."
+
+              echo "checking database at ${DB_HOST}:${DB_PORT} ..."
+              until pg_isready -h "${DB_HOST}" -p "${DB_PORT}" >/dev/null 2>&1; do
+                echo "  database not accepting connections yet, retrying in 2s"; sleep 2
+              done
+              echo "database is accepting connections. dependencies satisfied."
+          env:
+            - name: RIDER_HOST
+              value: {{ .Values.initCheck.riderHost | quote }}
+            - name: RIDER_PORT
+              value: {{ .Values.initCheck.riderPort | quote }}
+            - name: DB_HOST
+              value: {{ .Values.initCheck.dbHost | quote }}
+            - name: DB_PORT
+              value: {{ .Values.initCheck.dbPort | quote }}
+          resources:
+            {{- toYaml .Values.initCheck.resources | nindent 12 }}
+      {{- end }}
       containers:
         - name: pricing
           image: "{{ .Values.global.image.registry }}/{{ .Values.image.repository }}:{{ .Values.global.image.tag }}"
