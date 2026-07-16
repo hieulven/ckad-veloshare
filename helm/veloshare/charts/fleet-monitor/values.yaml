@@ -1,18 +1,22 @@
 # Values for the fleet-monitor subchart.
-# Everything that varies for fleet-monitor lives here: image, schedule,
-# targets, and resources. `.Values.global.*` (registry/tag/pullPolicy/
-# namespace) comes from the umbrella chart.
-
-# Name resources by the bare service name, consistent with the other
-# subcharts.
+#
+# NOTE: this CronJob now generates a daily USER-METRICS REPORT for the manager
+# (it used to poll /healthz — that job is redundant with the liveness/readiness
+# probes). The subchart/image name is kept as `fleet-monitor` to avoid churn
+# across the umbrella chart; treat it as the usage-report job.
+#
+# `.Values.global.*` (registry/tag/pullPolicy/namespace) comes from the umbrella.
 fullnameOverride: fleet-monitor
 
 image:
   repository: fleet-monitor
 
-schedule: "*/5 * * * *"
+# Daily at 00:00. Trigger on demand any time with:
+#   kubectl -n veloshare create job --from=cronjob/fleet-monitor report-now
+schedule: "0 0 * * *"
 
-targets: "pricing rider station trip"
+# How many past daily reports to keep readable in the Job history.
+historyLimit: 7
 
 resources:
   requests:

@@ -19,6 +19,7 @@ tính cước theo thời gian sử dụng cùng hạng thành viên.
 - [Xác thực và phân quyền](#xác-thực-và-phân-quyền)
 - [Quản lý secret](#quản-lý-secret)
 - [Log tập trung (EFK)](#log-tập-trung-efk)
+- [Báo cáo chỉ số cho quản lý](#báo-cáo-chỉ-số-cho-quản-lý)
 - [Hạ tầng cluster](#hạ-tầng-cluster)
 - [Cấu trúc thư mục](#cấu-trúc-thư-mục)
 - [Yêu cầu công cụ](#yêu-cầu-công-cụ)
@@ -72,7 +73,7 @@ flowchart TB
     ST --> PG
     TR --> PG
 
-    FM["fleet-monitor<br/>CronJob 5 phút/lần"] -.->|"/healthz"| PR & RD & ST & TR
+    FM["fleet-monitor<br/>CronJob báo cáo<br/>hằng ngày"] -->|"truy vấn tổng hợp"| PG
 
     PR & RD & ST & TR -.->|"sidecar Fluent Bit"| ES[("Elasticsearch")]
     ES --> KB
@@ -96,7 +97,7 @@ Luồng một chuyến đi hoàn chỉnh:
 | `station` | Python / FastAPI | Quản lý trạm và số chỗ đỗ | PostgreSQL schema `stations` |
 | `trip` | Python / FastAPI | Bắt đầu/kết thúc chuyến, điều phối tính cước, bắn sự kiện | PostgreSQL schema `trips`, Redis |
 | `pricing` | Python / FastAPI | Tính cước `{phút, hạng, surge} -> {cents}` | Không lưu trạng thái |
-| `fleet-monitor` | Bash (curl, jq) | Kiểm tra `/healthz`, phát hiện service chết | CronJob `*/5 * * * *` |
+| `fleet-monitor` | Bash (psql) | Sinh **báo cáo chỉ số người dùng** cho quản lý (số người dùng, chuyến đi, doanh thu theo hạng) | CronJob `0 0 * * *` (hằng ngày) |
 | `frontend` | nginx + JavaScript thuần | Giao diện web, reverse-proxy `/api/*` | Không lưu trạng thái |
 | `logging` | Elasticsearch + Kibana | Lưu trữ và tra cứu log tập trung | Elasticsearch StatefulSet |
 
@@ -247,6 +248,31 @@ Lần đầu dùng Kibana cần tạo **data view** tên `veloshare-*` với tr�
 
 ---
 
+## Báo cáo chỉ số cho quản lý
+
+Service `fleet-monitor` là một **CronJob chạy hằng ngày** (`0 0 * * *`) sinh báo cáo chỉ số
+người dùng/nghiệp vụ và in ra **log của Job**. Nó truy vấn tổng hợp trực tiếp trên PostgreSQL
+(bằng quyền `postgres` admin — đây là job báo cáo nên đọc chéo schema là hợp lệ).
+
+Báo cáo gồm: tổng người dùng và phân bố theo hạng; số trạm + sức chứa + chỗ trống; tổng chuyến
+đi (hoàn tất / đang chạy / hôm nay); doanh thu lũy kế và hôm nay, cước trung bình, thời lượng
+trung bình; và doanh thu theo từng hạng thành viên.
+
+**Kích hoạt bất kỳ lúc nào** (không cần đợi tới nửa đêm):
+
+```sh
+kubectl -n veloshare create job --from=cronjob/fleet-monitor report-now
+kubectl -n veloshare wait --for=condition=complete job/report-now --timeout=60s
+kubectl -n veloshare logs job/report-now
+```
+
+CronJob giữ lại **7 báo cáo gần nhất** (`successfulJobsHistoryLimit: 7`) để quản lý đọc lại.
+
+> Hiện báo cáo được gửi ra **stdout / log của Job**. Muốn gửi email/Slack thì cần thêm một
+> Secret SMTP/webhook — chưa nằm trong phạm vi môi trường học tập cục bộ này.
+
+---
+
 ## Hạ tầng cluster
 
 Cluster `kind` tên **`veloshare`** gồm **3 node** (định nghĩa trong [`kind-config.yaml`](./kind-config.yaml)):
@@ -276,7 +302,7 @@ truy cập thẳng `http://localhost/` mà không cần sửa file `hosts`.
 
 ```
 rider/ station/ trip/ pricing/   Service FastAPI (main.py, requirements.txt, Dockerfile)
-fleet-monitor/                    monitor.sh + Dockerfile (CronJob)
+fleet-monitor/                    report.sh + Dockerfile (CronJob báo cáo hằng ngày)
 frontend/                         index.html, app.js, styles.css, nginx.conf, Dockerfile
 helm/veloshare/                   Umbrella Helm chart
   Chart.yaml                      Khai báo 9 subchart phụ thuộc
@@ -482,7 +508,7 @@ nguyên và nhãn đi qua helper dùng chung trong `templates/_helpers.tpl`.
 
 | Hiện tượng | Giải thích |
 |---|---|
-| Pod `fleet-monitor` hiển thị `0/1 Completed` | **Bình thường.** Đây là CronJob — pod chạy xong thì container thoát (`exitCode=0`), nên không còn container nào "đang chạy". Xem log: `kubectl -n veloshare logs job/<tên>` |
+| Pod `fleet-monitor` hiển thị `0/1 Completed` | **Bình thường.** Đây là CronJob — pod chạy xong thì container thoát (`exitCode=0`), nên không còn container nào "đang chạy". Bản báo cáo nằm trong log của Job: `kubectl -n veloshare logs job/<tên>` |
 | HPA của `pricing` hiển thị `cpu <unknown>` | Chưa cài `metrics-server` (cố ý), nên HPA không tự scale |
 | Elasticsearch lâu vào trạng thái Ready | Image lớn (~670MB) và ES khởi động chậm. Bắt buộc phải có init container privileged đặt `vm.max_map_count=262144`, nếu không ES không khởi động được |
 | Pod ứng dụng hiển thị `2/2` | Đúng: container ứng dụng + sidecar `log-agent`. Xem log sidecar: `kubectl -n veloshare logs <pod> -c log-agent` |

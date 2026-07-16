@@ -1,6 +1,6 @@
 apiVersion: v2
 name: fleet-monitor
-description: CronJob that polls /healthz and flags dead docks (bash).
+description: CronJob that generates a daily user-metrics report for the manager (bash + psql).
 type: application
 version: 0.1.0
 appVersion: "0.1.0"

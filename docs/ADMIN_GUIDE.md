@@ -24,7 +24,7 @@ VeloShare is five services fronted by an nginx frontend, backed by shared Postgr
 | `rider` | Python/FastAPI | Rider CRUD, tier lookup, **auth/JWT issuer** |
 | `station` | Python/FastAPI | Station & dock inventory |
 | `trip` | Python/FastAPI | Trip lifecycle; calls `pricing` and `rider`; uses Redis + Postgres |
-| `fleet-monitor` | Bash (curl/jq) | CronJob, polls `/healthz` on all services every 5 minutes, flags dead docks |
+| `fleet-monitor` | Bash (psql) | CronJob, generates a **daily user-metrics report** for the manager (riders, trips, revenue by tier) to the Job logs |
 
 **Data layer:**
 - One **Postgres** StatefulSet, shared, with a separate schema and DB user per service (`riders`, `stations`, `trips`).
@@ -145,11 +145,15 @@ Service-to-service calls use in-cluster DNS, e.g. `http://pricing.veloshare.svc.
 ## Troubleshooting runbook
 
 **`fleet-monitor` pods show `0/1 Completed`.**
-This is normal — a finished CronJob pod has no running container once it exits 0. Check its output and run it on demand:
+This is normal — a finished CronJob pod has no running container once it exits 0. `fleet-monitor` is
+the daily user-metrics report; the report itself is the Job's log output. Read the latest, or run one
+on demand:
 
 ```bash
-kubectl -n veloshare logs job/<job-name>
-kubectl -n veloshare create job fm --from=cronjob/fleet-monitor
+kubectl -n veloshare logs job/<job-name>                              # read a past daily report
+kubectl -n veloshare create job report-now --from=cronjob/fleet-monitor
+kubectl -n veloshare wait --for=condition=complete job/report-now --timeout=60s
+kubectl -n veloshare logs job/report-now
 ```
 
 **HPA on `pricing` shows `cpu <unknown>`.**

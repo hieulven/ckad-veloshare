@@ -8,7 +8,9 @@ metadata:
 spec:
   schedule: {{ .Values.schedule | quote }}
   concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 3
+  # Keep a week of daily reports so the manager can read recent ones from the
+  # Job logs (kubectl -n veloshare logs job/<name>).
+  successfulJobsHistoryLimit: {{ .Values.historyLimit }}
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
@@ -23,7 +25,15 @@ spec:
               image: "{{ .Values.global.image.registry }}/{{ .Values.image.repository }}:{{ .Values.global.image.tag }}"
               imagePullPolicy: {{ .Values.global.image.pullPolicy }}
               env:
-                - name: TARGETS
-                  value: {{ .Values.targets | quote }}
+                - name: DB_HOST
+                  value: postgres
+                - name: DB_PORT
+                  value: "5432"
+              # Admin DB credentials (POSTGRES_USER/PASSWORD/DB) for the
+              # cross-schema report queries, from the postgres Secret created by
+              # `make secrets` — never rendered by Helm.
+              envFrom:
+                - secretRef:
+                    name: postgres
               resources:
                 {{- toYaml .Values.resources | nindent 16 }}
