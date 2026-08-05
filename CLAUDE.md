@@ -1,129 +1,227 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # VeloShare — Project Conventions
 
-City bike-share platform. Practice project for learning Kubernetes with Helm.
+City bike-share platform. Practice project for learning Kubernetes with Helm (CKAD prep).
 Riders unlock a bike from a dock, ride, return it, and get charged by duration and tier.
+Fully deployed on a local 3-node `kind` cluster. Detailed narrative docs (in Vietnamese)
+live in [`README.md`](./README.md); operator/user reference (English) is in
+[`docs/ADMIN_GUIDE.md`](./docs/ADMIN_GUIDE.md) and [`docs/USER_GUIDE.md`](./docs/USER_GUIDE.md).
 
-Read this file before generating code, manifests, or charts. Follow these conventions unless I say otherwise.
+## Commands
 
-## Services
+```sh
+make up                # full bring-up: cluster -> ingress -> secrets -> images -> load -> deploy
+make env-init           # create env/*.env from templates (once, local only, gitignored)
+make secrets            # apply env/*.env to the cluster as per-pod Secrets (refuses on leftover change-me)
+make images             # docker build every service image veloshare/<svc>:0.1.0
+make load               # kind load docker-image for every service into cluster `veloshare`
+make lint               # helm lint ./helm/veloshare
+make template           # helm template (dry-run render, no cluster needed)
+make deploy             # lint, then helm upgrade --install veloshare ./helm/veloshare -n veloshare
+make history            # helm history veloshare -n veloshare
+make rollback REV=<n>   # helm rollback veloshare <n> -n veloshare
+make metrics-server     # install metrics-server (kind needs --kubelet-insecure-tls) so the HPA works
+make smoke-test         # scripts/smoke-test.sh — non-interactive E2E check, non-zero exit on failure
+make demo               # scripts/demo.sh — step-by-step walkthrough of the CKAD demo checklist
+make bluegreen-demo     # apply bluegreen-demo.yaml (standalone lab, not part of the chart)
+make uninstall          # helm uninstall veloshare -n veloshare  (ask before running)
+make cluster-down       # kind delete cluster --name veloshare   (ask before running)
+```
+
+There is no test suite or linter for the Python services in this repo — verification is
+`helm lint` / `helm template` for charts, `scripts/smoke-test.sh` against a running cluster,
+and hitting the running service through `kubectl port-forward` or the ingress for app code.
+
+**After changing one service's code**, the image tag stays `0.1.0` so Kubernetes won't
+notice a new image on its own:
+
+```sh
+docker build -t veloshare/<service>:0.1.0 ./<service>
+kind load docker-image veloshare/<service>:0.1.0 --name veloshare
+kubectl -n veloshare rollout restart deploy/<service>
+```
+
+**Diagnostics:**
+
+```sh
+kubectl -n veloshare get pods -o wide
+kubectl -n veloshare get svc,endpoints                      # a Service with no endpoints = selector bug
+kubectl -n veloshare describe pod <pod>                     # Events at the bottom explain most failures
+kubectl -n veloshare get events --sort-by=.lastTimestamp
+kubectl -n veloshare top pods                               # needs metrics-server (`make metrics-server`)
+kubectl -n veloshare logs deploy/<service> -c <service>     # app pods are 3/3 — see logging below
+kubectl -n veloshare logs deploy/<service> -c log-agent     # the Fluent Bit sidecar
+kubectl -n veloshare exec postgres-0 -- psql -U postgres -d veloshare -c '...'
+kubectl -n veloshare exec deploy/redis -- redis-cli XRANGE trip.completed - +
+kubectl -n veloshare create job report-now --from=cronjob/fleet-monitor   # trigger the daily report now
+kubectl -n veloshare create job pods-now --from=cronjob/pod-lister        # trigger the RBAC demo now
+```
+
+## Architecture
+
+Five app services + a static frontend, fronted by ingress-nginx, backed by shared
+Postgres and Redis, with a Fluent Bit -> Elasticsearch -> Kibana logging stack sidecar'd
+onto every app pod.
 
 | Service | Language | Responsibility | State |
 |---|---|---|---|
-| rider | Python / FastAPI | Rider CRUD, tier lookup | Postgres schema `riders` |
-| station | Python / FastAPI | Station & dock inventory | Postgres schema `stations` |
-| trip | Python / FastAPI | Start/end trip, fare orchestration, event publish | Postgres schema `trips`, Redis |
-| pricing | Python / FastAPI | Fare calculation `{minutes, tier, surge} -> {cents}` | Stateless |
-| fleet-monitor | Bash (curl, jq) | Poll `/healthz`, flag dead docks | Stateless, runs as CronJob |
+| `rider` | Python / FastAPI | Rider CRUD, tier lookup, **JWT issuer** (`/auth/login`, `/auth/me`) | Postgres schema `riders` |
+| `station` | Python / FastAPI | Station & dock inventory | Postgres schema `stations` |
+| `trip` | Python / FastAPI | Start/end trip, calls `rider` + `pricing`, publishes events | Postgres schema `trips`, Redis |
+| `pricing` | Python / FastAPI | Fare calculation `{minutes, tier, surge} -> {cents}` | Stateless |
+| `fleet-monitor` | Bash (psql) | CronJob (`0 0 * * *`) — daily user/business metrics report to Job logs | Stateless |
+| `frontend` | nginx + vanilla JS | Serves the dashboard, reverse-proxies `/api/*` (same-origin, no CORS) | Stateless |
+| `logging` | Elasticsearch + Kibana | Central log store + UI, index `veloshare-logs`. **Off by default** — see Logging below | Elasticsearch StatefulSet |
 
-Data layer: one **Postgres** StatefulSet (shared, schema-per-service) + one **Redis** Deployment.
+`fleet-monitor` used to poll `/healthz` every 5 minutes and log DEAD/ALIVE — redundant
+with liveness/readiness probes that actually act on failure. It was repurposed into the
+daily report job; the name stayed to avoid churn in the umbrella chart, so it's now a
+mild misnomer.
 
-## Tooling
+### Auth
 
-- **kubectl** — install/inspect/debug the cluster (`get`, `logs`, `describe`, `port-forward`).
-- **Helm** — package and deploy everything. All k8s objects are Helm templates, never raw `kubectl apply`.
-- **kind** — local single-node cluster (cluster name `veloshare`).
-- Prefer `helm upgrade --install` for the deploy loop.
+- `rider` **issues** JWTs (`POST /auth/login`, HS256, 1h TTL by default); `trip` only
+  **verifies** them — both read the same `veloshare-auth` Secret (`JWT_SECRET`), so they
+  cannot drift apart.
+- The admin account (`ADMIN_EMAIL`/`ADMIN_PASSWORD`) comes from that same Secret, not the
+  `riders` table — nobody can create an admin account through the API.
+- Rider passwords: `hashlib.scrypt`, stored as `scrypt$<salt>$<hash>` in `password_hash`.
+- `trip` derives `rider_id` from the token, never from the request body; riders can only
+  see/end their own trips (403 otherwise), admins see everything.
+- Every request gets a `request_id` (from `X-Request-ID` or generated); `trip` forwards it
+  to `rider` and `pricing` so one transaction is traceable end-to-end in Kibana.
 
-## Repo layout
+### Data layer
 
-```
-veloshare/
-  rider/          main.py  requirements.txt  Dockerfile
-  station/        main.py  requirements.txt  Dockerfile
-  trip/           main.py  requirements.txt  Dockerfile
-  pricing/        main.py  requirements.txt  Dockerfile
-  fleet-monitor/  monitor.sh                 Dockerfile
-  helm/
-    veloshare/                 # umbrella chart for the whole platform
-      Chart.yaml               # declares subchart dependencies
-      values.yaml              # global values + per-service overrides
-      templates/               # shared/global resources (namespace, ingress)
-      charts/                  # subcharts, one per service
-        rider/     Chart.yaml values.yaml templates/
-        station/   Chart.yaml values.yaml templates/
-        trip/      Chart.yaml values.yaml templates/
-        pricing/   Chart.yaml values.yaml templates/
-        fleet-monitor/ Chart.yaml values.yaml templates/
-        postgres/  Chart.yaml values.yaml templates/
-        redis/     Chart.yaml values.yaml templates/
-  Makefile
-  CLAUDE.md
-```
+One Postgres StatefulSet (PVC, headless Service), **one schema + one DB role per service**
+(`riders`/`rider`, `stations`/`station`, `trips`/`trip`), each role's `search_path` fixed
+to its own schema — no cross-schema queries from app code. `fleet-monitor` is the one
+deliberate exception: it authenticates as the `postgres` admin role to aggregate across
+schemas for its report, which is legitimate for a reporting job.
 
-The five service subcharts share the same template shape (deployment, service, configmap, secret,
-probes) and differ only through their `values.yaml`. Factor common snippets into `_helpers.tpl`.
+Redis (single Deployment), non-durable, two uses:
+- `trip:active:{rider_id}` (TTL, default 7200s) — fast "already riding?" check.
+- `trip.completed` stream — fan-out event on trip end.
+Trip records themselves always live in Postgres, never only in Redis.
 
-## Helm conventions
+Migrations run via an init container before each service's app container starts.
 
-- Umbrella chart `veloshare` owns global values (namespace, image registry/tag, ingress host) and
-  pulls each service in as a subchart dependency in `Chart.yaml`.
-- Every value that varies per service lives in `values.yaml` — image, port, env, replicas, resources,
-  probe paths. Templates must not hardcode names or ports; read them from `.Values`.
-- Use `{{ include "veloshare.fullname" . }}` and shared `_helpers.tpl` for names and labels so all
-  resources get consistent `app.kubernetes.io/*` labels.
-- Standard labels on everything: `app.kubernetes.io/name`, `app.kubernetes.io/part-of: veloshare`.
-- Postgres and Redis are subcharts too (either hand-written templates or a declared dependency);
-  keep their config in their own `values.yaml`.
-- Deploy with: `helm upgrade --install veloshare ./helm/veloshare -n veloshare --create-namespace`.
-- Lint before every apply: `helm lint ./helm/veloshare` and inspect with `helm template` /
-  `--dry-run` before touching the cluster.
+### Secrets (important: never via Helm or git)
 
-## Python conventions
+Every credential — DB passwords, `JWT_SECRET`, admin login — lives in a local,
+gitignored `env/<name>.env` file (only `env/<name>.env.template` is committed) and is
+pushed straight into the cluster by `make secrets` as a plain Secret
+(`kubectl create secret generic --from-env-file`). Helm templates only ever do
+`envFrom: secretRef: name: <secret>` — they never read or render a credential, so
+`helm template` / `helm get manifest` produce **zero** Secrets, even by accident.
 
-- Python 3.12. FastAPI + uvicorn. Pydantic v2 models for request/response.
-- Async DB access with `asyncpg` (pool created at startup, closed at shutdown).
-- Every service exposes `GET /healthz` returning 200 with `{"status": "ok"}`.
-- All config comes from **environment variables**, never hardcoded. No secrets in code.
-- Keep each `main.py` self-contained and small; this is a learning project, not production.
+| env file | Secret | Consumed by |
+|---|---|---|
+| `env/postgres.env` | `postgres` | postgres StatefulSet (init script creates per-service roles); also `fleet-monitor` |
+| `env/rider.env` | `rider-db` | rider |
+| `env/station.env` | `station-db` | station |
+| `env/trip.env` | `trip-db` | trip |
+| `env/auth.env` | `veloshare-auth` | rider (signs) + trip (verifies) |
 
-## Docker conventions
+`DB_PASSWORD` in each service's file must match the corresponding `*_PASSWORD` in
+`env/postgres.env` — that's what the Postgres init script uses to create the LOGIN role.
+`env/postgres.env` only takes effect on first `initdb`; changing a role password later
+needs `ALTER ROLE` or deleting the PVC. `make secrets` refuses to run while any
+`change-me` placeholder remains in `env/*.env`.
 
-- Base image `python:3.12-slim`. Run as a **non-root** user.
-- `pip install --no-cache-dir -r requirements.txt`.
-- Entrypoint: `uvicorn main:app --host 0.0.0.0 --port 8000`.
-- fleet-monitor uses `alpine:3.20` + `apk add --no-cache curl jq bash`.
-- Build then load into kind: `kind load docker-image <img> --name veloshare`.
+### Logging (EFK)
 
-## Kubernetes conventions (expressed through Helm templates)
+Every app pod is **3/3**: the app container, the `ambassador` nginx sidecar, and a
+`log-agent` Fluent Bit sidecar — the latter rendered by the shared
+`veloshare.loggingSidecar` / `veloshare.logVolumes` helpers in
+`helm/veloshare/templates/_helpers.tpl`. The app writes JSON logs to a shared `emptyDir`
+(`/var/log/veloshare/app.log`) as well as stdout; Fluent Bit tails that file.
 
-- One namespace: `veloshare` (created by the umbrella chart via `--create-namespace`).
-- All app services listen on container port **8000**, exposed via ClusterIP Service on port **80**.
-- Every Deployment has **liveness and readiness probes** hitting `/healthz` (paths from values).
-- Set `resources.requests` and `resources.limits` on every container (from values).
-- Config via **ConfigMap**; credentials via **Secret**. Mount as env vars.
-- Service-to-service calls use in-cluster DNS: `http://<service>.veloshare.svc.cluster.local`
-  (trip calls `pricing` and `rider`). Build these from template values, not literals.
-- Postgres is a StatefulSet with a PVC and a headless Service. Redis is a plain Deployment.
+**Elasticsearch + Kibana are OFF by default** (`global.logging.enabled: false`). The two
+of them add ~350m CPU / 400Mi to requests, which does not fit the namespace
+`ResourceQuota`. The sidecar and the shared `emptyDir` stay in place either way — only
+the Fluent Bit *output* changes:
 
-## Database conventions
+- **logging off (default)** — output is the sidecar's own stdout:
+  `kubectl -n veloshare logs deploy/<service> -c log-agent`
+- **logging on** — output is Elasticsearch (index `veloshare-logs`), searchable in Kibana
+  at `/kibana`. Useful queries: `event: trip_completed`, `service: pricing`,
+  `event: login and outcome: failure`, `request_id: "<id>"`.
 
-- Single Postgres instance, **one schema per service**, **one DB user per service**.
-- Each service only touches its own schema — no cross-schema queries.
-- Each service gets its own DB credential injected as its own Secret (templated per subchart).
-- Migrations run via an **init container** before the app container starts.
+Turning logging on requires raising the quota at the same time or the elasticsearch and
+kibana Pods are rejected — there's a ready-made `--set` example in
+`helm/veloshare/values.yaml`. Both paths are already handled by the
+`fluent-bit-config` ConfigMap, so this is purely a values flip.
 
-## Redis conventions
+### Helm structure
 
-- Stream `trip.completed` — trip publishes on ride completion (fan-out, not durable storage).
-- Key `trip:active:{rider_id}` with TTL — fast "is this rider already riding?" check.
-- Durable trip records live in **Postgres**, never only in Redis.
+Umbrella chart `helm/veloshare` declares 9 subchart dependencies in `Chart.yaml`
+(`pricing`, `postgres`, `rider`, `station`, `trip`, `redis`, `fleet-monitor`, `frontend`,
+`logging`) and owns global values (`namespace`, `image.registry/tag/pullPolicy`,
+`ingress.host/className`, `logging.enabled`). Per-service tunables live in each
+subchart's own `values.yaml`; templates read from `.Values`, never hardcode names/ports.
+All naming/labelling goes through `_helpers.tpl` (`veloshare.fullname`,
+`veloshare.labels`, `veloshare.selectorLabels`) so every resource gets consistent
+`app.kubernetes.io/*` labels regardless of which subchart rendered it.
 
-## Build order (do NOT scaffold everything at once)
+App containers listen on **8000**; the `ambassador` nginx sidecar listens on **8080** and
+proxies to `127.0.0.1:8000`, and it is 8080 that the ClusterIP Service's `targetPort`
+points at. Services expose port **80**. Every long-running workload has liveness +
+readiness probes; elasticsearch and kibana additionally have a `startupProbe` because
+both are slow-starting JVM/Node apps.
 
-1. `pricing` — stateless, no deps. Write its subchart, `helm upgrade --install`, get probes green.
-2. Postgres subchart (StatefulSet + PVC).
-3. `rider` subchart.
-4. `station` subchart.
-5. `trip` subchart + Redis — first service with service-to-service calls.
-6. `fleet-monitor` CronJob subchart (`*/5 * * * *`).
-7. Ingress in the umbrella chart, then an HPA on `pricing`.
+### Cluster layout
 
-Implement and verify one service end-to-end (image -> kind load -> helm upgrade -> port-forward -> curl)
-before starting the next. Commit after each working service.
+`kind` cluster named `veloshare`, defined in `kind-config.yaml`: 1 control-plane node
+(tainted `NoSchedule` so no app pods land there; runs ingress-nginx, maps host ports
+80/443) + 2 worker nodes (run all app pods). Ingress host is empty (`global.ingress.host: ""`)
+so it matches any `Host` header — `http://localhost/` works with no `/etc/hosts` entry.
 
-## Working style
+### Deliberate rough edges (don't "fix" without asking)
 
-- When creating templates, show me the rendered output (`helm template`) and briefly explain
-  probe/port/resource choices.
-- Ask before destructive commands (`helm uninstall`, `kubectl delete`, `kind delete cluster`).
-- Don't invent extra services or dependencies beyond the five above.
+- `metrics-server` is **not part of `make up`** — install it with `make metrics-server`
+  (which also patches in `--kubelet-insecure-tls`, required on kind). Until then the
+  `pricing` HPA shows `cpu <unknown>` and never scales, and `kubectl top` errors with
+  `Metrics API not available`.
+- Elasticsearch + Kibana are **off by default** (`global.logging.enabled: false`) because
+  they don't fit the namespace `ResourceQuota`. This is a values flip, not a missing
+  feature — see the Logging section above.
+- `kustomize-demo/` deliberately overlays a **standalone placeholder** Deployment rather
+  than a real veloshare service, so that Helm and Kustomize never both own the same live
+  resource. Same for `bluegreen-demo.yaml`, `pvc-demo.yaml` and `probes-demo.yaml`: they
+  are standalone labs applied by hand (or via `make bluegreen-demo`), not chart members.
+- The `pricing` Deployment has an optional `initCheck`-gated init container that waits
+  for `rider` (TCP) and Postgres (`pg_isready`) before starting — even though `pricing`
+  is stateless and calls neither. It exists purely to demonstrate the
+  wait-for-dependency pattern; see the comment in
+  `helm/veloshare/charts/pricing/templates/deployment.yaml`. Toggle via
+  `pricing.initCheck.enabled`.
+- Elasticsearch runs with `xpack.security.enabled=false`; everything is plain HTTP (no
+  TLS); Secrets are only base64 in etcd. This is a local learning environment, not a
+  security posture to replicate.
+
+## Conventions for new/changed code
+
+- **Python**: 3.12, FastAPI + uvicorn, Pydantic v2 models, async `asyncpg` pool
+  (created in `lifespan`, closed on shutdown). Every service exposes `GET /healthz` ->
+  `{"status": "ok"}`. Config only from env vars (`require_env` fails fast for anything
+  secret — no fallback default). JSON logging via `pythonjsonlogger`, one line per
+  request plus named business events (`login`, `rider_created`, `trip_completed`, ...),
+  each carrying `request_id`.
+- **Docker**: `python:3.12-slim`, non-root user (`useradd --uid 10001`), entrypoint
+  `uvicorn main:app --host 0.0.0.0 --port 8000`. `fleet-monitor` is `alpine` +
+  `postgresql-client` (psql, not curl/jq — that was the old health-poll version).
+  Build then `kind load docker-image <img> --name veloshare`.
+- **Helm**: lint (`helm lint`) and render (`helm template` / `--dry-run`) before
+  touching the cluster. Service-to-service calls use in-cluster DNS
+  (`http://<service>.veloshare.svc.cluster.local`), built from values, never literals.
+- Don't invent extra services or dependencies beyond the five above (+ frontend +
+  logging, which are already built).
+- Ask before destructive commands (`helm uninstall`, `kubectl delete`, `kind delete
+  cluster`) and before touching anything under `env/*.env` in a way that could change a
+  live credential.
+- When creating or changing templates, show the rendered `helm template` output and
+  briefly explain probe/port/resource/values choices.

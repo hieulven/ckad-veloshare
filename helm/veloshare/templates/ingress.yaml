@@ -17,6 +17,7 @@ spec:
       {{- end }}
       http:
         paths:
+          {{- if .Values.global.logging.enabled }}
           - path: /kibana
             pathType: Prefix
             backend:
@@ -24,6 +25,7 @@ spec:
                 name: kibana
                 port:
                   number: 5601
+          {{- end }}
           - path: /
             pathType: Prefix
             backend:

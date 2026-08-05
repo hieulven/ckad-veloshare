@@ -27,8 +27,98 @@ global:
     host: ""
     className: nginx
 
+  # Elasticsearch + Kibana. OFF by default: the two of them add ~350m CPU /
+  # 400Mi requested and ~1500m CPU / 640Mi limited on top of the core stack,
+  # which does not fit under global.resourceQuota below (see the sizing note
+  # there). With this off, the Fluent Bit `log-agent` sidecar stays on every
+  # app Pod and ships to its own stdout instead of Elasticsearch, so the
+  # sidecar + shared `logs` emptyDir pattern is still live and inspectable:
+  #   kubectl -n veloshare logs deploy/<service> -c log-agent
+  # Turn it back on with `--set global.logging.enabled=true`, but raise
+  # global.resourceQuota first or the elasticsearch/kibana Pods are rejected.
   logging:
+    enabled: false
+
+  # NetworkPolicy isolation on the backend API services. This IS enforced on
+  # this cluster — kindnet (kind's default CNI) implements NetworkPolicy, so
+  # no extra CNI install is needed. Allows the ingress-nginx controller, the
+  # frontend, and backend-to-backend traffic; denies everything else, in both
+  # directions. See helm/veloshare/templates/networkpolicy-backend.yaml for
+  # the per-rule reasoning and a command that demonstrates the denial.
+  networkPolicy:
     enabled: true
+
+  # CKAD learning demo of the RBAC + in-cluster API access pattern: a
+  # ServiceAccount + Role + RoleBinding scoped to "list/get/watch pods" in
+  # this namespace, bound to a pod-lister CronJob whose Pod uses its mounted
+  # SA token to call the Kubernetes API and list Pods once per run. See
+  # helm/veloshare/templates/rbac-demo-*.yaml. Trigger on demand any time with:
+  #   kubectl -n veloshare create job --from=cronjob/pod-lister run-now
+  rbacDemo:
+    enabled: true
+    schedule: "*/5 * * * *"
+    historyLimit: 3
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+
+  # CKAD learning demo of namespace resource governance. ResourceQuota caps
+  # the AGGREGATE across every Pod in the namespace; LimitRange bounds what
+  # ANY SINGLE container may request/limit and fills in defaults for a
+  # container that specifies none.
+  #
+  # Sized around the 7 core app Pods (rider/station/trip/pricing/frontend/
+  # postgres/redis + their ambassador and log-agent sidecars), which is what
+  # global.logging.enabled=false renders. Measured from the actual render:
+  # 320m CPU / 992Mi requested, 1650m CPU / 2112Mi limited — so the quota
+  # below leaves real headroom for `make deploy` rolling updates.
+  #
+  # Enabling global.logging adds elasticsearch + kibana (~350m/400Mi more
+  # requested, ~1500m/640Mi more limited), which pushes every one of the four
+  # dimensions below over the cap and gets those Pods REJECTED. To run the
+  # EFK stack, raise this quota at the same time, e.g.:
+  #   helm upgrade ... --set global.logging.enabled=true \
+  #     --set global.resourceQuota.requests.cpu=1 \
+  #     --set global.resourceQuota.requests.memory=1600Mi \
+  #     --set global.resourceQuota.limits.cpu=4 \
+  #     --set global.resourceQuota.limits.memory=3Gi
+  # Leaving logging off and shrinking this quota is also the easiest way to
+  # demonstrate ResourceQuota rejection live — see docs/ckad-checklist.md (C5).
+  resourceQuota:
+    enabled: true
+    requests:
+      cpu: 500m
+      memory: 1200Mi
+    limits:
+      cpu: "2"
+      memory: 2560Mi
+    pods: "15"
+
+  limitRange:
+    enabled: true
+    # Only applies to a container that omits resources entirely — every
+    # container in this chart already sets its own, so these only kick in
+    # for an ad-hoc `kubectl run` test pod.
+    default:
+      cpu: 100m
+      memory: 128Mi
+    defaultRequest:
+      cpu: 25m
+      memory: 64Mi
+    # Bounds every container must fall within, existing or new. max must
+    # stay >= the largest single container limit already in the platform
+    # (elasticsearch: 1 CPU / postgres: 512Mi) or the next `make deploy`
+    # would start rejecting our own Pods.
+    min:
+      cpu: 5m
+      memory: 16Mi
+    max:
+      cpu: "2"
+      memory: 1Gi
 
   # NOTE: there is deliberately no auth/credential config here.
   # Every secret (JWT signing key, admin login, DB passwords) lives ONLY in the

@@ -16,15 +16,20 @@ spec:
         {{- include "veloshare.selectorLabels" . | nindent 8 }}
     spec:
       securityContext:
-        fsGroup: 10001
-      {{- if .Values.initCheck.enabled }}
-      # NOTE: pricing is stateless and depends on neither rider nor a database.
-      # This init container is a demonstration of the wait-for-dependency +
-      # db-connectivity-check pattern; it intentionally couples pricing to
-      # dependencies it does not actually use. Disable with initCheck.enabled=false.
+        {{- include "veloshare.podSecurityContext" (dict "fsGroup" 10001) | nindent 8 }}
       initContainers:
+        {{- if .Values.configCheck.enabled }}
+        {{- include "veloshare.configCheckInit" (dict "requiredVars" .Values.configCheck.requiredVars "envFrom" .Values.configCheck.envFrom "resources" .Values.configCheck.resources) | nindent 8 }}
+        {{- end }}
+        {{- if .Values.initCheck.enabled }}
+        # NOTE: pricing is stateless and depends on neither rider nor a database.
+        # This init container is a demonstration of the wait-for-dependency +
+        # db-connectivity-check pattern; it intentionally couples pricing to
+        # dependencies it does not actually use. Disable with initCheck.enabled=false.
         - name: wait-for-deps
           image: {{ .Values.initCheck.image | quote }}
+          securityContext:
+            {{- include "veloshare.containerSecurityContext" (dict "runAsUser" 999) | nindent 12 }}
           command:
             - bash
             - -c
@@ -52,22 +57,30 @@ spec:
               value: {{ .Values.initCheck.dbPort | quote }}
           resources:
             {{- toYaml .Values.initCheck.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
       {{- end }}
       containers:
         - name: pricing
           image: "{{ .Values.global.image.registry }}/{{ .Values.image.repository }}:{{ .Values.global.image.tag }}"
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          securityContext:
+            {{- include "veloshare.containerSecurityContext" (dict "runAsUser" 10001) | nindent 12 }}
           ports:
             - name: http
               containerPort: {{ .Values.containerPort }}
           envFrom:
             - configMapRef:
                 name: {{ include "veloshare.fullname" . }}
-          {{- if (.Values.global.logging).enabled }}
+          env:
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
           volumeMounts:
             - name: logs
               mountPath: /var/log/veloshare
-          {{- end }}
+            - name: tmp
+              mountPath: /tmp
           livenessProbe:
             httpGet:
               path: {{ .Values.probePath }}
@@ -86,10 +99,17 @@ spec:
             failureThreshold: 3
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-        {{- if (.Values.global.logging).enabled }}
-        {{- include "veloshare.loggingSidecar" . | nindent 8 }}
+        {{- if .Values.ambassador.enabled }}
+        {{- include "veloshare.ambassadorContainer" (dict "port" .Values.ambassador.port "resources" .Values.ambassador.resources) | nindent 8 }}
         {{- end }}
-      {{- if (.Values.global.logging).enabled }}
+        {{- include "veloshare.loggingSidecar" . | nindent 8 }}
       volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.ambassador.enabled }}
+        - name: ambassador-config
+          configMap:
+            name: {{ include "veloshare.fullname" . }}-ambassador
+        {{- include "veloshare.ambassadorVolumes" . | nindent 8 }}
+        {{- end }}
         {{- include "veloshare.logVolumes" . | nindent 8 }}
-      {{- end }}

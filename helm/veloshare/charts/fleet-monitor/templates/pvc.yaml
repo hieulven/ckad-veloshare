@@ -1,0 +1,15 @@
+# No storageClassName set — uses the cluster's default StorageClass (dynamic
+# provisioning), same as postgres's and elasticsearch's data PVCs.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "veloshare.fullname" . }}-reports
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "veloshare.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.reports.storage }}

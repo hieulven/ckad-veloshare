@@ -16,6 +16,8 @@ helm/**/requirements.lock
 *.swp
 .idea/
 .vscode/
+# WSL writes these alternate-data-stream sidecars for files copied from Windows.
+*:Zone.Identifier
 
 # Local env / secrets — never commit real credentials.
 # env/<service>.env holds each pod's config + credentials and is applied to the

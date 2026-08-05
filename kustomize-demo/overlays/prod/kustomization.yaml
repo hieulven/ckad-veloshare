@@ -1,0 +1,20 @@
+# Prod overlay: 3 replicas, image pinned to an exact patch version
+# (1.27.4-alpine — never floats in prod, unlike overlays/dev), plus a
+# resources patch: prod gets a bigger CPU/memory budget than the base
+# default. This is the "one more overlay capability" beyond
+# replicas/image — a strategic-merge patch via the `patches` transformer.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+
+images:
+  - name: nginxinc/nginx-unprivileged
+    newTag: "1.27.4-alpine"
+
+replicas:
+  - name: kustomize-demo-app
+    count: 3
+
+patches:
+  - path: resources-patch.yaml

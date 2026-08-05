@@ -31,6 +31,7 @@ tính cước theo thời gian sử dụng cùng hạng thành viên.
 - [Các lệnh Makefile](#các-lệnh-makefile)
 - [Khắc phục sự cố](#khắc-phục-sự-cố)
 - [Lưu ý bảo mật](#lưu-ý-bảo-mật)
+- [Giới hạn đã biết](#giới-hạn-đã-biết)
 - [Tài liệu chi tiết](#tài-liệu-chi-tiết)
 
 ---
@@ -226,12 +227,23 @@ openssl rand -hex 32
 
 ## Log tập trung (EFK)
 
-Mỗi pod ứng dụng chạy **2 container**: container ứng dụng + sidecar `log-agent` (Fluent Bit).
+Mỗi pod ứng dụng chạy **3 container**: container ứng dụng + sidecar `ambassador` (nginx reverse
+proxy) + sidecar `log-agent` (Fluent Bit).
+
+> **Elasticsearch và Kibana mặc định TẮT** (`global.logging.enabled: false`) vì hai thành phần
+> này vượt `ResourceQuota` của namespace. Khi tắt, Fluent Bit đẩy log ra **stdout của chính
+> sidecar** — vẫn xem được đầy đủ log JSON của mọi pod:
+> ```sh
+> kubectl -n veloshare logs deploy/<service> -c log-agent
+> ```
+> Muốn dùng đầy đủ EFK (Kibana ở `/kibana`) thì bật logging **kèm** nâng quota — xem ví dụ
+> `--set` trong [`helm/veloshare/values.yaml`](./helm/veloshare/values.yaml).
 
 ```
 ứng dụng --ghi--> /var/log/veloshare/app.log   (volume emptyDir dùng chung)
                           |
-                   Fluent Bit (sidecar) --đẩy--> Elasticsearch (index veloshare-logs) --> Kibana
+                   Fluent Bit (sidecar) --đẩy--> stdout                     (mặc định)
+                                          \--đẩy--> Elasticsearch --> Kibana (khi bật logging)
 ```
 
 - Ứng dụng ghi log **JSON**: mỗi request một dòng (`method`, `path`, `status`, `duration_ms`,
@@ -509,16 +521,35 @@ nguyên và nhãn đi qua helper dùng chung trong `templates/_helpers.tpl`.
 | Hiện tượng | Giải thích |
 |---|---|
 | Pod `fleet-monitor` hiển thị `0/1 Completed` | **Bình thường.** Đây là CronJob — pod chạy xong thì container thoát (`exitCode=0`), nên không còn container nào "đang chạy". Bản báo cáo nằm trong log của Job: `kubectl -n veloshare logs job/<tên>` |
-| HPA của `pricing` hiển thị `cpu <unknown>` | Chưa cài `metrics-server` (cố ý), nên HPA không tự scale |
-| Elasticsearch lâu vào trạng thái Ready | Image lớn (~670MB) và ES khởi động chậm. Bắt buộc phải có init container privileged đặt `vm.max_map_count=262144`, nếu không ES không khởi động được |
-| Pod ứng dụng hiển thị `2/2` | Đúng: container ứng dụng + sidecar `log-agent`. Xem log sidecar: `kubectl -n veloshare logs <pod> -c log-agent` |
+| HPA của `pricing` hiển thị `cpu <unknown>` | Chưa cài `metrics-server`. Chạy `make metrics-server` để HPA đọc được CPU và scale thật |
+| `kubectl top` báo lỗi `Metrics API not available` | Cùng nguyên nhân trên — `top` bắt buộc phải có `metrics-server`. Chạy `make metrics-server` |
+| Không có pod `elasticsearch` / `kibana` | **Bình thường.** `global.logging.enabled` mặc định là `false` vì ES + Kibana vượt `ResourceQuota` của namespace. Sidecar `log-agent` vẫn chạy và ghi log ra stdout của chính nó |
+| Bật `global.logging.enabled=true` nhưng pod ES/Kibana bị từ chối | Đúng như thiết kế: quota chặn. Phải nâng `global.resourceQuota` cùng lúc — xem ví dụ `--set` trong `helm/veloshare/values.yaml` |
+| Elasticsearch lâu vào trạng thái Ready (khi bật logging) | Image lớn (~670MB) và ES khởi động chậm; đã có `startupProbe` cho tối đa 5 phút. Bắt buộc phải có init container privileged đặt `vm.max_map_count=262144` |
+| Pod ứng dụng hiển thị `3/3` | Đúng: container ứng dụng + sidecar `ambassador` (nginx) + sidecar `log-agent`. Phải chỉ rõ container khi xem log: `kubectl -n veloshare logs <pod> -c log-agent` |
 | Sửa code nhưng không thấy thay đổi | Tag image không đổi → phải `make images && make load` rồi `kubectl -n veloshare rollout restart deploy/<service>` |
 
 Lệnh chẩn đoán hữu ích:
 
 ```sh
+# Trạng thái tổng quan
 kubectl -n veloshare get pods -o wide
+kubectl -n veloshare get svc,endpoints          # Service nào chưa có endpoint là đang lỗi selector
+
+# Vì sao pod không lên: xem Events ở cuối phần describe
+kubectl -n veloshare describe pod <pod>
+kubectl -n veloshare get events --sort-by=.lastTimestamp | tail -20
+
+# Tiêu thụ tài nguyên (cần metrics-server — xem `make metrics-server`)
+kubectl -n veloshare top pods
+kubectl top nodes
+
+# Log: pod ứng dụng có 3 container nên luôn phải có -c
 kubectl -n veloshare logs deploy/trip -c trip
+kubectl -n veloshare logs deploy/trip -c log-agent
+kubectl -n veloshare logs deploy/trip -c trip --previous   # log của lần crash trước
+
+# Dữ liệu
 kubectl -n veloshare exec postgres-0 -- psql -U postgres -d veloshare -c 'SELECT * FROM trips.trips;'
 kubectl -n veloshare exec deploy/redis -- redis-cli XRANGE trip.completed - +
 ```
@@ -550,10 +581,36 @@ thu hồi token.
 
 ---
 
+## Giới hạn đã biết
+
+Ngoài các giới hạn bảo mật ở trên, đây là những điểm cần biết trước khi đánh giá hệ thống:
+
+| Giới hạn | Chi tiết |
+|---|---|
+| **EFK tắt mặc định** | `global.logging.enabled: false`. Elasticsearch + Kibana cần thêm ~350m CPU / 400Mi RAM (request) và vượt `ResourceQuota` của namespace. Sidecar Fluent Bit vẫn chạy trên mọi pod ứng dụng và ghi ra stdout, nên pattern sidecar + `emptyDir` dùng chung vẫn quan sát được. Bật lại bằng `--set global.logging.enabled=true` **kèm** nâng quota |
+| **Redis không bền vững** | Redis dùng `emptyDir`, mất dữ liệu khi pod restart. Đây là chủ ý: bản ghi chuyến đi luôn nằm ở Postgres, Redis chỉ giữ khoá `trip:active:*` (có TTL) và stream `trip.completed` |
+| **Quota sát với thực tế sử dụng** | Quota được tính vừa đủ cho 7 pod lõi (0.31/0.5 CPU, 992/1200Mi request). Thêm replica thủ công hoặc bật HPA scale mạnh có thể chạm trần — đó cũng chính là cách demo `ResourceQuota` hoạt động |
+| **Kustomize demo tách rời** | `kustomize-demo/` overlay một Deployment placeholder độc lập, không phải service thật. Cố ý: tránh để Helm và Kustomize cùng sở hữu một resource |
+| **Blue/green là lab rời** | `bluegreen-demo.yaml` không nằm trong Helm chart; chạy bằng `make bluegreen-demo` |
+| **Cluster cục bộ** | Chỉ chạy trên `kind`, dùng `local-path` StorageClass và ingress-nginx map cổng 80/443 của host. Chưa kiểm thử trên cloud provider nào |
+| **Không có test tự động cho code Python** | Kiểm chứng bằng `helm lint` / `helm template` cho chart và `scripts/smoke-test.sh` cho hệ thống đang chạy |
+
+---
+
 ## Tài liệu chi tiết
 
 | Tài liệu | Dành cho |
 |---|---|
 | [`docs/USER_GUIDE.md`](./docs/USER_GUIDE.md) | Người dùng cuối — đăng nhập, tìm trạm, đi xe, xem cước |
-| [`docs/ADMIN_GUIDE.md`](./docs/ADMIN_GUIDE.md) | Quản trị viên — kiến trúc, vận hành, tra log Kibana, xử lý sự cố |
+| [`docs/ADMIN_GUIDE.md`](./docs/ADMIN_GUIDE.md) | Quản trị viên — vận hành, rolling update, rollback, xử lý sự cố |
+| [`docs/architecture.md`](./docs/architecture.md) | Sơ đồ service, luồng dữ liệu, đồng bộ/bất đồng bộ |
+| [`docs/ckad-checklist.md`](./docs/ckad-checklist.md) | **Bản đồ yêu cầu CKAD → file + lệnh kiểm chứng** (dành cho người chấm) |
 | [`CLAUDE.md`](./CLAUDE.md) | Quy ước phát triển của dự án |
+
+Demo trực tiếp theo từng bước của checklist:
+
+```sh
+./scripts/demo.sh          # đi hết 9 bước demo, dừng chờ Enter giữa các bước
+./scripts/demo.sh 7        # chỉ chạy bước 7 (NetworkPolicy)
+./scripts/smoke-test.sh    # kiểm tra E2E không tương tác, exit != 0 nếu có lỗi
+```

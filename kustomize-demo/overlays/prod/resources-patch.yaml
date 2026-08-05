@@ -1,0 +1,21 @@
+# Strategic-merge patch: give the "app" container a bigger resource
+# budget in prod than the base default (10m/16Mi requests, 50m/32Mi
+# limits) — matched by container name, everything else in the base
+# Deployment is left alone.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kustomize-demo-app
+  namespace: veloshare
+spec:
+  template:
+    spec:
+      containers:
+        - name: app
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi

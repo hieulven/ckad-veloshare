@@ -13,24 +13,34 @@ elasticsearch:
     repository: docker.elastic.co/elasticsearch/elasticsearch
     tag: "8.15.3"
   storage: 2Gi
-  heap: "-Xms512m -Xmx512m"
+  # 200Mi/72Mi (400Mi combined... actually 200Mi total) got both ES and Kibana
+  # OOMKilled. Raised to 200Mi request here (400Mi combined with Kibana below)
+  # — still well below Elastic's documented minimums, so this may still be
+  # marginal under any real indexing load. If elasticsearch-0 gets OOMKilled
+  # again, the last fully-stable values were heap 256m / 512Mi / 768Mi.
+  heap: "-Xms100m -Xmx100m"
   resources:
     requests:
       cpu: 250m
-      memory: 1Gi
+      memory: 200Mi
     limits:
       cpu: "1"
-      memory: 1536Mi
+      memory: 320Mi
 
 kibana:
   image:
     repository: docker.elastic.co/kibana/kibana
     tag: "8.15.3"
   basePath: /kibana
+  # Raised to 200Mi request (see elasticsearch above — 400Mi combined).
+  # Kibana is a full Node.js app with many bundled plugins; Elastic's own
+  # docs recommend 300-500Mi+ to boot reliably, so this is still a real risk
+  # of OOMKilled/CrashLoopBackOff. If it recurs, the last fully-stable values
+  # were 320Mi / 640Mi.
   resources:
     requests:
       cpu: 100m
-      memory: 512Mi
+      memory: 200Mi
     limits:
       cpu: 500m
-      memory: 1Gi
+      memory: 320Mi

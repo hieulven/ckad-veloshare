@@ -1,3 +1,4 @@
+{{- if .Values.global.logging.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -21,9 +22,13 @@ spec:
         {{- include "veloshare.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: kibana
     spec:
+      securityContext:
+        {{- include "veloshare.podSecurityContext" (dict "fsGroup" 1000) | nindent 8 }}
       containers:
         - name: kibana
           image: "{{ .Values.kibana.image.repository }}:{{ .Values.kibana.image.tag }}"
+          securityContext:
+            {{- include "veloshare.containerSecurityContext" (dict "runAsUser" 1000) | nindent 12 }}
           ports:
             - name: http
               containerPort: 5601
@@ -36,13 +41,43 @@ spec:
               value: "true"
             - name: SERVER_HOST
               value: "0.0.0.0"
+          volumeMounts:
+            - name: kibana-data
+              mountPath: /usr/share/kibana/data
+            - name: tmp
+              mountPath: /tmp
+          # Kibana is a Node.js app with a large bundled plugin set and won't
+          # serve anything until Elasticsearch is also up — 40 x 15s = up to
+          # 10 minutes before it's declared failed. Liveness/readiness only
+          # start once this has succeeded once.
+          startupProbe:
+            httpGet:
+              path: {{ .Values.kibana.basePath }}/api/status
+              port: 5601
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 40
+          # TCP-only, same reasoning as elasticsearch: /api/status reports
+          # non-200 whenever ES is briefly unreachable, which should drop
+          # Kibana out of the Service (readiness) but must not restart it.
+          livenessProbe:
+            tcpSocket:
+              port: 5601
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
           readinessProbe:
             httpGet:
               path: {{ .Values.kibana.basePath }}/api/status
               port: 5601
-            initialDelaySeconds: 60
             periodSeconds: 15
             timeoutSeconds: 5
             failureThreshold: 8
           resources:
             {{- toYaml .Values.kibana.resources | nindent 12 }}
+      volumes:
+        - name: kibana-data
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+{{- end }}

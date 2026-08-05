@@ -15,13 +15,22 @@ spec:
       labels:
         {{- include "veloshare.selectorLabels" . | nindent 8 }}
     spec:
+      securityContext:
+        {{- include "veloshare.podSecurityContext" (dict "fsGroup" 101) | nindent 8 }}
       containers:
         - name: frontend
           image: "{{ .Values.global.image.registry }}/{{ .Values.image.repository }}:{{ .Values.global.image.tag }}"
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          securityContext:
+            {{- include "veloshare.containerSecurityContext" (dict "runAsUser" 101) | nindent 12 }}
           ports:
             - name: http
               containerPort: {{ .Values.containerPort }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
           livenessProbe:
             httpGet:
               path: /
@@ -40,3 +49,8 @@ spec:
             failureThreshold: 3
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: nginx-cache
+          emptyDir: {}

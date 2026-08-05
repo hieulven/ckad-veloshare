@@ -1,3 +1,4 @@
+{{- if .Values.global.logging.enabled }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -21,17 +22,33 @@ spec:
         {{- include "veloshare.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: elasticsearch
     spec:
+      securityContext:
+        {{- include "veloshare.podSecurityContext" (dict "fsGroup" 1000) | nindent 8 }}
       initContainers:
         # Elasticsearch refuses to start unless the host's mmap count limit
-        # is raised; this must run as a privileged init container.
+        # is raised; this must run as a privileged root init container — it
+        # edits a host-wide kernel parameter, which is fundamentally
+        # incompatible with non-root/read-only hardening. This is a
+        # deliberate, necessary exception (see CLAUDE.md "Deliberate rough
+        # edges"); the elasticsearch container itself still runs non-root
+        # with a read-only filesystem below.
         - name: set-vm-max-map-count
           image: busybox:1.36
           command: ["sh", "-c", "sysctl -w vm.max_map_count=262144"]
           securityContext:
             privileged: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
       containers:
         - name: elasticsearch
           image: "{{ .Values.elasticsearch.image.repository }}:{{ .Values.elasticsearch.image.tag }}"
+          securityContext:
+            {{- include "veloshare.containerSecurityContext" (dict "runAsUser" 1000) | nindent 12 }}
           ports:
             - name: http
               containerPort: 9200
@@ -43,22 +60,53 @@ spec:
             - name: xpack.security.enabled
               value: "false"
             - name: ES_JAVA_OPTS
-              value: {{ .Values.elasticsearch.heap | quote }}
+              value: "{{ .Values.elasticsearch.heap }} -Djava.io.tmpdir=/tmp"
             - name: bootstrap.memory_lock
               value: "false"
           volumeMounts:
             - name: data
               mountPath: /usr/share/elasticsearch/data
+            - name: es-logs
+              mountPath: /usr/share/elasticsearch/logs
+            - name: tmp
+              mountPath: /tmp
+          # Startup probe gates the other two: Elasticsearch is a JVM that can
+          # take minutes to open its HTTP port on a small kind node. 30 x 10s
+          # = up to 5 minutes to come up, after which liveness/readiness take
+          # over on their own (much tighter) schedules. Without this, a
+          # liveness probe fast enough to be useful would kill the pod
+          # mid-boot in a restart loop.
+          startupProbe:
+            httpGet:
+              path: /_cluster/health
+              port: 9200
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          # Liveness is a bare TCP check on purpose: /_cluster/health returns
+          # non-200 while the cluster is yellow/red, which is a legitimate
+          # state (single-node, unassigned replicas) and must not restart the
+          # pod. If the port is gone, the JVM is genuinely dead.
+          livenessProbe:
+            tcpSocket:
+              port: 9200
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /_cluster/health
               port: 9200
-            initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 6
           resources:
             {{- toYaml .Values.elasticsearch.resources | nindent 12 }}
+      volumes:
+        - name: es-logs
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
   volumeClaimTemplates:
     - metadata:
         name: data
@@ -67,3 +115,4 @@ spec:
         resources:
           requests:
             storage: {{ .Values.elasticsearch.storage }}
+{{- end }}

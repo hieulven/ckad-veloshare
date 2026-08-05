@@ -6,10 +6,13 @@ metadata:
   labels:
     {{- include "veloshare.labels" . | nindent 4 }}
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
     {{- include "veloshare.selectorLabels" . | nindent 4 }}
   ports:
     - name: http
       port: {{ .Values.service.port }}
       targetPort: {{ .Values.containerPort }}
+      {{- with .Values.service.nodePort }}
+      nodePort: {{ . }}
+      {{- end }}

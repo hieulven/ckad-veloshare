@@ -15,13 +15,25 @@ image:
 #   kubectl -n veloshare create job --from=cronjob/fleet-monitor report-now
 schedule: "0 0 * * *"
 
-# How many past daily reports to keep readable in the Job history.
-historyLimit: 7
+# Each run now tees its report to a file on the "reports" PVC below (see
+# reports.storage), not just stdout, so the actual report history is a
+# durable, growing archive independent of the Job objects themselves. That
+# means the Job/Pod objects no longer need to be kept around for their logs
+# — ttlSecondsAfterFinished (a time-based condition) cleans up EVERY
+# finished Job (success or failure) this long after it completes, replacing
+# the old count-based successfulJobsHistoryLimit/failedJobsHistoryLimit.
+historyTTLSeconds: 86400 # 1 day
+
+# Dynamically-provisioned PVC (see templates/pvc.yaml) mounted at /reports,
+# where each run appends report-<date>.log. 100Mi comfortably holds years
+# of daily plain-text reports.
+reports:
+  storage: 100Mi
 
 resources:
   requests:
     cpu: 25m
-    memory: 32Mi
+    memory: 64Mi
   limits:
     cpu: 100m
-    memory: 64Mi
+    memory: 128Mi

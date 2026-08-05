@@ -1,0 +1,24 @@
+{{- if .Values.global.limitRange.enabled }}
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: veloshare-limits
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "veloshare.labels" . | nindent 4 }}
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: {{ .Values.global.limitRange.default.cpu | quote }}
+        memory: {{ .Values.global.limitRange.default.memory | quote }}
+      defaultRequest:
+        cpu: {{ .Values.global.limitRange.defaultRequest.cpu | quote }}
+        memory: {{ .Values.global.limitRange.defaultRequest.memory | quote }}
+      min:
+        cpu: {{ .Values.global.limitRange.min.cpu | quote }}
+        memory: {{ .Values.global.limitRange.min.memory | quote }}
+      max:
+        cpu: {{ .Values.global.limitRange.max.cpu | quote }}
+        memory: {{ .Values.global.limitRange.max.memory | quote }}
+{{- end }}

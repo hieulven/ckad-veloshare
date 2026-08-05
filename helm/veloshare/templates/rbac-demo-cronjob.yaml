@@ -1,0 +1,49 @@
+{{- if .Values.global.rbacDemo.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pod-lister
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "veloshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rbac-demo
+spec:
+  schedule: {{ .Values.global.rbacDemo.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: {{ .Values.global.rbacDemo.historyLimit }}
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            {{- include "veloshare.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: rbac-demo
+        spec:
+          restartPolicy: Never
+          serviceAccountName: pod-lister
+          # Explicit even though it's the default — this Pod's whole point is
+          # to exercise the mounted SA token against the API server.
+          automountServiceAccountToken: true
+          securityContext:
+            {{- include "veloshare.podSecurityContext" (dict "fsGroup" 10001) | nindent 12 }}
+          containers:
+            - name: pod-lister
+              image: "{{ .Values.global.image.registry }}/pod-lister:{{ .Values.global.image.tag }}"
+              imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+              securityContext:
+                {{- include "veloshare.containerSecurityContext" (dict "runAsUser" 10001) | nindent 16 }}
+              # list-pods.sh reads its own mounted SA token from
+              # /var/run/secrets/kubernetes.io/serviceaccount/ and calls the
+              # API server directly with curl — the Role above only grants
+              # get/list/watch on pods in this namespace, so that's the full
+              # extent of what the token can do.
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+              resources:
+                {{- toYaml .Values.global.rbacDemo.resources | nindent 16 }}
+          volumes:
+            - name: tmp
+              emptyDir: {}
+{{- end }}

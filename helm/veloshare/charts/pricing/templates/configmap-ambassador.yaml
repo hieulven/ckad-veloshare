@@ -1,0 +1,12 @@
+{{- if .Values.ambassador.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "veloshare.fullname" . }}-ambassador
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "veloshare.labels" . | nindent 4 }}
+data:
+  default.conf: |
+    {{- include "veloshare.ambassadorConf" (dict "port" .Values.ambassador.port "appPort" .Values.containerPort) | nindent 4 }}
+{{- end }}

@@ -16,10 +16,14 @@ spec:
       labels:
         {{- include "veloshare.selectorLabels" . | nindent 8 }}
     spec:
+      securityContext:
+        {{- include "veloshare.podSecurityContext" (dict "fsGroup" 999) | nindent 8 }}
       containers:
         - name: postgres
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          securityContext:
+            {{- include "veloshare.containerSecurityContext" (dict "runAsUser" 999) | nindent 12 }}
           ports:
             - name: postgres
               containerPort: {{ .Values.containerPort }}
@@ -35,6 +39,10 @@ spec:
             - name: init-sql
               mountPath: /docker-entrypoint-initdb.d
               readOnly: true
+            - name: run
+              mountPath: /var/run/postgresql
+            - name: tmp
+              mountPath: /tmp
           readinessProbe:
             exec:
               command: ["pg_isready", "-U", "postgres", "-d", "veloshare"]
@@ -59,6 +67,10 @@ spec:
             # shell instead of sourcing it (which would leak `set -euo
             # pipefail` into the entrypoint).
             defaultMode: 0755
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
   volumeClaimTemplates:
     - metadata:
         name: data

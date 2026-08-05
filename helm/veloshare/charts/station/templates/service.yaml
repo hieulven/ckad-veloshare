@@ -12,4 +12,8 @@ spec:
   ports:
     - name: http
       port: {{ .Values.service.port }}
+      {{- if .Values.ambassador.enabled }}
+      targetPort: {{ .Values.ambassador.port }}
+      {{- else }}
       targetPort: {{ .Values.containerPort }}
+      {{- end }}

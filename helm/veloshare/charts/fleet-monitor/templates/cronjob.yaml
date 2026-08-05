@@ -8,22 +8,36 @@ metadata:
 spec:
   schedule: {{ .Values.schedule | quote }}
   concurrencyPolicy: Forbid
-  # Keep a week of daily reports so the manager can read recent ones from the
-  # Job logs (kubectl -n veloshare logs job/<name>).
-  successfulJobsHistoryLimit: {{ .Values.historyLimit }}
-  failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
+      # Time-based cleanup: every finished Job (success or failure) is
+      # deleted this long after it completes, regardless of how many have
+      # run. Safe to keep short because the actual report content now lives
+      # on the "reports" PVC, not in the Job's Pod logs.
+      ttlSecondsAfterFinished: {{ .Values.historyTTLSeconds }}
       template:
         metadata:
           labels:
             {{- include "veloshare.selectorLabels" . | nindent 12 }}
         spec:
           restartPolicy: Never
+          securityContext:
+            {{- include "veloshare.podSecurityContext" (dict "fsGroup" 10001) | nindent 12 }}
           containers:
             - name: fleet-monitor
               image: "{{ .Values.global.image.registry }}/{{ .Values.image.repository }}:{{ .Values.global.image.tag }}"
               imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+              securityContext:
+                {{- include "veloshare.containerSecurityContext" (dict "runAsUser" 10001) | nindent 16 }}
+              # Wraps the image's own ENTRYPOINT (report.sh) so its output is
+              # teed to a dated file on the "reports" PVC as well as stdout —
+              # no image rebuild needed for this, it's a manifest-only change.
+              command:
+                - sh
+                - -c
+                - |
+                  set -o pipefail
+                  /usr/local/bin/report.sh | tee "/reports/report-$(date -u +%F).log"
               env:
                 - name: DB_HOST
                   value: postgres
@@ -35,5 +49,16 @@ spec:
               envFrom:
                 - secretRef:
                     name: postgres
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+                - name: reports
+                  mountPath: /reports
               resources:
                 {{- toYaml .Values.resources | nindent 16 }}
+          volumes:
+            - name: tmp
+              emptyDir: {}
+            - name: reports
+              persistentVolumeClaim:
+                claimName: {{ include "veloshare.fullname" . }}-reports

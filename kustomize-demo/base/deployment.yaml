@@ -1,0 +1,57 @@
+# CKAD learning lab: patching image tag + replica count (and more, in
+# prod) via Kustomize overlays, without duplicating this manifest. See
+# kustomization.yaml in this directory for why it's a standalone
+# placeholder Deployment rather than a real veloshare service.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kustomize-demo-app
+  namespace: veloshare
+  labels:
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: kustomize-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kustomize-demo-app
+  template:
+    metadata:
+      labels:
+        app: kustomize-demo-app
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: app
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 101
+            runAsGroup: 101
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: nginx-cache
+          emptyDir: {}

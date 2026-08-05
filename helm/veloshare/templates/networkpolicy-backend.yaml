@@ -1,0 +1,127 @@
+{{- if .Values.global.networkPolicy.enabled }}
+# CKAD learning demo of NetworkPolicy isolation for the backend API services
+# (rider/station/trip/pricing).
+#
+# CORRECTION: this WAS assumed to be inert on kindnet (kind's default CNI),
+# but that turned out to be wrong — this policy caused a real 504 from
+# `curl http://localhost/api/healthz`, confirmed by deleting it live and
+# watching the request succeed. kindnet on this cluster does enforce
+# NetworkPolicy. Treat it as fully live.
+#
+# Ingress: only the ingress-nginx controller, the frontend, and other backend
+# pods may reach a backend pod. "Frontend only" would otherwise also block
+# trip's direct calls to rider (tier lookup) and pricing (fare calc), which is
+# why backend-to-backend traffic is allowed too; see CLAUDE.md's architecture
+# table.
+#
+# The ingress-nginx controller's namespace IS in the allow-list: the
+# veloshare-api Ingress routes /api/healthz straight from the controller to
+# rider, bypassing frontend, so without this rule that path 504s. It is scoped
+# to the controller's namespace (not 0.0.0.0/0), so this stays a real
+# restriction — any pod outside ingress-nginx/veloshare still can't reach a
+# backend. Verify the isolation still bites with a pod that ISN'T allowed:
+#   kubectl -n veloshare run probe --rm -it --image=curlimages/curl --restart=Never \
+#     --labels=app.kubernetes.io/name=probe -- curl -sS --max-time 5 http://rider/healthz
+# (that one hangs and fails; curling the same URL from the frontend pod works).
+# Port 8080 is the ambassador sidecar's port — since ambassador.enabled is
+# true for all four services, that's what the Service targetPort actually
+# points at; 8000 (the app's own port) is included too so this stays correct
+# if ambassador is ever disabled.
+#
+# Egress: only DNS, Postgres, Redis, other backend pods, and (if logging is
+# on) Elasticsearch are allowed — nothing else, which means no rule permits
+# 0.0.0.0/0, so all other egress (including the real internet) is denied by
+# NetworkPolicy's default-deny-once-selected behavior.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-isolation
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "veloshare.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values:
+          - rider
+          - station
+          - trip
+          - pricing
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: frontend
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - rider
+                  - station
+                  - trip
+                  - pricing
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 8000
+  egress:
+    # DNS — without this, every http://<service> DNS lookup fails and the
+    # Pod can't reach anything, including the destinations allowed below.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    - to:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - rider
+                  - station
+                  - trip
+                  - pricing
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 8000
+    {{- if .Values.global.logging.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: elasticsearch
+      ports:
+        - protocol: TCP
+          port: 9200
+    {{- end }}
+{{- end }}

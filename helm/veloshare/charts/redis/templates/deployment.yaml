@@ -15,13 +15,20 @@ spec:
       labels:
         {{- include "veloshare.selectorLabels" . | nindent 8 }}
     spec:
+      securityContext:
+        {{- include "veloshare.podSecurityContext" (dict "fsGroup" 999) | nindent 8 }}
       containers:
         - name: redis
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          securityContext:
+            {{- include "veloshare.containerSecurityContext" (dict "runAsUser" 999) | nindent 12 }}
           ports:
             - name: redis
               containerPort: {{ .Values.containerPort }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
           livenessProbe:
             exec:
               command: ["redis-cli", "ping"]
@@ -38,3 +45,6 @@ spec:
             failureThreshold: 3
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: data
+          emptyDir: {}

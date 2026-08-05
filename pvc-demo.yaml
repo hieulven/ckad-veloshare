@@ -1,0 +1,66 @@
+# CKAD learning lab: dynamic-provisioning PVC persistence.
+#
+# Not part of the Helm chart on purpose — this is a one-off, hands-on
+# exercise (write data, delete the Pod, recreate it, verify the data is
+# still there), not a permanently-running piece of the platform. A bare Pod
+# (no Deployment) is also deliberate: deleting it won't trigger a controller
+# to auto-recreate it, so "delete Pod, recreate" is a real, explicit step
+# you take, not something Kubernetes does for you.
+#
+# No storageClassName is set, so this uses the cluster's default
+# StorageClass — on kind that's "standard" (rancher.io/local-path), which
+# dynamically provisions a new PersistentVolume the moment this PVC is
+# created, rather than requiring one to be pre-created by hand.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-demo
+  namespace: veloshare
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Mi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pvc-demo-pod
+  namespace: veloshare
+  labels:
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: pvc-demo
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: pvc-demo
+      image: busybox:1.36
+      command: ["sh", "-c", "sleep infinity"]
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        capabilities:
+          drop: ["ALL"]
+      volumeMounts:
+        - name: data
+          mountPath: /data
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          cpu: 50m
+          memory: 32Mi
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: pvc-demo

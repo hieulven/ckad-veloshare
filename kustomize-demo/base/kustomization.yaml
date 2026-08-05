@@ -1,0 +1,18 @@
+# Why this overlays a standalone placeholder Deployment (kustomize-demo-app)
+# instead of a real veloshare service (rider/station/trip/pricing/...):
+# those are owned end-to-end by the Helm umbrella chart (helm/veloshare) —
+# Helm renders their Deployments, tracks them in its release, and expects
+# to be the sole writer. If this Kustomize base/overlay pair instead
+# targeted one of those, `kubectl apply -k` and `helm upgrade` would both
+# think they own the same live resource: field-manager conflicts, Helm
+# clobbering Kustomize's replica/image patches on the next deploy (or vice
+# versa), and `helm diff`/`helm get manifest` no longer matching what's
+# actually running. Keeping Kustomize scoped to its own throwaway
+# Deployment demonstrates base+overlay patching (dev/prod: replicas,
+# image tag, resources) without that collision — same reasoning as
+# bluegreen-demo.yaml being a standalone lab rather than patching a real
+# Service.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - deployment.yaml

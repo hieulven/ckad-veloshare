@@ -1,0 +1,16 @@
+# Dev overlay: 1 replica (cheap on a laptop-sized kind cluster), image
+# tag floats on the 1.27 minor line (no exact patch pin) since dev wants
+# the latest fixes without a manual bump every time. Contrast with
+# overlays/prod, which pins an exact patch version and never floats.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+
+images:
+  - name: nginxinc/nginx-unprivileged
+    newTag: "1.27-alpine"
+
+replicas:
+  - name: kustomize-demo-app
+    count: 1

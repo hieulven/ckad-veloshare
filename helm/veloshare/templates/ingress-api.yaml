@@ -1,0 +1,45 @@
+{{- if .Values.global.ingress.enabled }}
+# Separate Ingress object (rather than another rule on the main "veloshare"
+# Ingress) because nginx.ingress.kubernetes.io/rewrite-target applies to
+# EVERY path in the Ingress object it's set on — putting it here keeps the
+# "/" and "/kibana" rules in ingress.yaml untouched by the rewrite.
+#
+# INCIDENT: this used to match the whole "/api" prefix (/api(/|$)(.*)) and
+# route it straight to rider. That silently broke the real app: frontend's
+# own nginx (frontend/nginx.conf) already owns /api/riders/*, /api/stations/*,
+# /api/trips/*, /api/pricing/* as ITS internal proxy scheme, and ingress-nginx
+# evaluates this Ingress's regex path with higher precedence than the "/"
+# prefix rule in ingress.yaml — so every one of those, including the login
+# page's POST /api/riders/auth/login, was getting hijacked here, rewritten
+# to a path rider doesn't have, and then blocked by backend-isolation (the
+# ingress controller isn't in its ingress allow-list) instead of ever
+# reaching frontend. Scoped down to the single literal path this exercise
+# actually exists to demonstrate so it can no longer shadow real traffic.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: veloshare-api
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "veloshare.labels" . | nindent 4 }}
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /healthz
+spec:
+  {{- with .Values.global.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  rules:
+    -
+      {{- with .Values.global.ingress.host }}
+      host: {{ . | quote }}
+      {{- end }}
+      http:
+        paths:
+          - path: /api/healthz
+            pathType: Exact
+            backend:
+              service:
+                name: rider
+                port:
+                  number: 80
+{{- end }}

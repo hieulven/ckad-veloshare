@@ -7,6 +7,8 @@ Operator reference for deploying, configuring, and troubleshooting the VeloShare
 - [Architecture](#architecture)
 - [Cluster layout](#cluster-layout)
 - [Operations (Makefile)](#operations-makefile)
+- [Rolling updates](#rolling-updates)
+- [Helm upgrade and rollback](#helm-upgrade-and-rollback)
 - [Admin dashboard](#admin-dashboard)
 - [Logging with Kibana](#logging-with-kibana)
 - [Log event reference](#log-event-reference)
@@ -15,6 +17,9 @@ Operator reference for deploying, configuring, and troubleshooting the VeloShare
 - [Security posture](#security-posture)
 
 ## Architecture
+
+> Full service diagram, sync-vs-async breakdown, pod composition, and data ownership live in
+> [`docs/architecture.md`](./architecture.md). This section is the short operator-facing summary.
 
 VeloShare is five services fronted by an nginx frontend, backed by shared Postgres and Redis:
 
@@ -70,6 +75,88 @@ make images
 make load
 kubectl -n veloshare rollout restart deploy/<service>
 ```
+
+`rollout restart` re-rolls the **same Pod spec** — it does not change which image tag the
+Deployment references. It works here only because every image keeps the fixed tag `0.1.0` and
+`imagePullPolicy: IfNotPresent`: `kind load docker-image` replaces the tag's content on the node,
+and `rollout restart` forces new Pods that re-pull (find) that already-loaded tag. It is **not**
+the same operation as changing the image a Deployment points at — see below.
+
+## Rolling updates
+
+Use this procedure when you want the Deployment's spec itself to change (a real new image tag),
+and to demonstrate the CKAD rolling-update surface: `kubectl set image`, `rollout status`,
+`rollout undo`, `rollout history`.
+
+**1. Build and load a new, distinct tag** (don't reuse `0.1.0` — that's what makes this a real
+rolling update instead of a same-spec restart):
+
+```bash
+docker build -t veloshare/trip:0.2.0 ./trip
+kind load docker-image veloshare/trip:0.2.0 --name veloshare
+```
+
+**2. Point the Deployment at the new tag and watch the rollout:**
+
+```bash
+kubectl -n veloshare set image deploy/trip trip=veloshare/trip:0.2.0
+kubectl -n veloshare rollout status deploy/trip
+```
+
+`set image` patches only the named container's `image:` field — this is the actual spec change
+that `rollout restart` never makes. `rollout status` blocks until every new-generation Pod is
+Ready and the old ReplicaSet is scaled to zero (or reports the failure if it can't).
+
+**3. Roll back if the new version is bad:**
+
+```bash
+kubectl -n veloshare rollout history deploy/trip
+kubectl -n veloshare rollout undo deploy/trip
+kubectl -n veloshare rollout status deploy/trip
+```
+
+`rollout undo` (optionally `--to-revision=<N>` from the `rollout history` list) reverts the
+Deployment to the previous ReplicaSet's Pod spec — including its image tag — and is itself a
+rolling update in the other direction.
+
+> Note: `helm.sh` is the source of truth for this chart's rendered manifests — a `kubectl set
+> image` done outside Helm will be **overwritten** by the next `helm upgrade` / `make deploy`
+> (which re-renders `.Values.global.image.tag`, currently pinned to `0.1.0`). Use `kubectl set
+> image` for the live demo above, then either bump `global.image.tag` in
+> `helm/veloshare/values.yaml` to make it stick, or `helm upgrade ... --set
+> global.image.tag=0.2.0` (see below).
+
+## Helm upgrade and rollback
+
+Every `make deploy` is a Helm release upgrade (`helm upgrade --install veloshare
+./helm/veloshare -n veloshare`), so the release has revision history independent of any single
+Deployment's rollout history:
+
+```bash
+helm -n veloshare history veloshare
+```
+
+**Override values at upgrade time** without editing `values.yaml` — useful for a quick demo of
+scaling one service:
+
+```bash
+helm upgrade veloshare ./helm/veloshare -n veloshare --set pricing.replicaCount=3
+kubectl -n veloshare get deploy pricing
+```
+
+**Roll the whole release back** to a previous revision (reverts every templated resource the
+chart owns, not just one Deployment's image):
+
+```bash
+helm -n veloshare rollback veloshare <REVISION>
+helm -n veloshare history veloshare      # confirm the rollback landed as a new revision
+```
+
+`helm rollback` creates a **new** revision that reproduces an old one's rendered manifests — it
+does not delete history, so `helm history` keeps growing. This is the release-level counterpart
+to `kubectl rollout undo`: use `kubectl rollout undo` to revert one Deployment's Pod spec quickly;
+use `helm rollback` when a bad `helm upgrade` (a values change, a template change, a chart
+version bump) needs to be undone across every resource it touched.
 
 ## Admin dashboard
 
@@ -157,16 +244,38 @@ kubectl -n veloshare logs job/report-now
 ```
 
 **HPA on `pricing` shows `cpu <unknown>`.**
-`metrics-server` is deliberately not installed in this cluster, so the HPA has no metrics and will never scale. This is expected in this environment.
-
-**Elasticsearch is slow to start.**
-It's a large image with real boot time, and it needs a privileged init container to set `vm.max_map_count=262144` before the main container can start. Give it a couple of minutes.
-
-**App pods show `2/2` — that's expected, not a problem.**
-Each app pod runs the service container plus a `log-agent` Fluent Bit sidecar. To check the sidecar specifically:
+`metrics-server` is not part of `make up`, so until it's installed the HPA has no metrics to read
+and will never scale. Install it and the target resolves to a real percentage:
 
 ```bash
-kubectl -n veloshare logs <pod> -c log-agent
+make metrics-server
+kubectl -n veloshare get hpa pricing -w
+```
+
+`make metrics-server` also patches in `--kubelet-insecure-tls`, which kind needs because its
+kubelet serving certificates aren't signed by the cluster CA — without that patch the
+metrics-server Pod runs but every scrape fails.
+
+**There are no `elasticsearch` / `kibana` pods.**
+Expected — `global.logging.enabled` defaults to `false` because Elasticsearch and Kibana
+together exceed the namespace `ResourceQuota`. The Fluent Bit sidecar still runs on every
+app pod and writes to its own stdout (`kubectl -n veloshare logs deploy/<svc> -c log-agent`).
+To run the full EFK stack, enable logging *and* raise the quota in the same command — see
+the worked `--set` example in `helm/veloshare/values.yaml`.
+
+**Elasticsearch is slow to start (when logging is enabled).**
+It's a large image with real boot time, and it needs a privileged init container to set `vm.max_map_count=262144` before the main container can start. A `startupProbe` allows up to 5 minutes before the pod is declared failed, so give it a couple of minutes.
+
+**App pods show `3/3` — that's expected, not a problem.**
+Each app pod runs the service container plus two sidecars: `ambassador` (an nginx reverse
+proxy on 8080 that the Service actually targets) and `log-agent` (Fluent Bit). Because
+there is more than one container, `kubectl logs` always needs an explicit `-c`:
+
+```bash
+kubectl -n veloshare logs <pod> -c <service>     # the app itself
+kubectl -n veloshare logs <pod> -c ambassador    # the nginx sidecar
+kubectl -n veloshare logs <pod> -c log-agent     # Fluent Bit — with logging off, the
+                                                 # app's JSON log lines land here
 ```
 
 **General inspection commands:**
@@ -176,6 +285,32 @@ kubectl -n veloshare get pods -o wide
 kubectl -n veloshare logs deploy/<service> -c <service>
 kubectl -n veloshare exec postgres-0 -- psql -U postgres -d veloshare -c '...'
 ```
+
+**Pod won't start, or a probe keeps failing — read `describe` and cluster `events` before logs.**
+`logs` only shows what the container itself printed; `describe` shows what the *kubelet/scheduler*
+did to it (image pull errors, probe failures with their HTTP status, OOMKilled, volume mount
+errors, which node it landed on) and is usually the faster first step for anything that never
+reaches Running:
+
+```bash
+kubectl -n veloshare describe pod <pod>
+kubectl -n veloshare get events --sort-by=.lastTimestamp
+```
+
+`get events` sorted by time gives a namespace-wide timeline (scheduling, pulls, probe failures,
+OOM kills, ReplicaSet scale events) — useful for correlating "which Deployment's rollout caused
+this" when several things changed at once.
+
+**Resource usage — `top` needs `metrics-server`.**
+
+```bash
+kubectl -n veloshare top pods
+kubectl -n veloshare top nodes
+```
+
+This cluster does not install `metrics-server` by default (see the `pricing` HPA note above); it
+is installed with `make metrics-server`. Without it, both `top` commands fail with `error: Metrics
+API not available` — that error means "no metrics-server," not "no pods."
 
 ## Security posture
 

@@ -16,10 +16,15 @@ spec:
         {{- include "veloshare.selectorLabels" . | nindent 8 }}
     spec:
       securityContext:
-        fsGroup: 10001
+        {{- include "veloshare.podSecurityContext" (dict "fsGroup" 10001) | nindent 8 }}
       initContainers:
+        {{- if .Values.configCheck.enabled }}
+        {{- include "veloshare.configCheckInit" (dict "requiredVars" .Values.configCheck.requiredVars "envFrom" .Values.configCheck.envFrom "resources" .Values.configCheck.resources) | nindent 8 }}
+        {{- end }}
         - name: migrate
           image: postgres:16
+          securityContext:
+            {{- include "veloshare.containerSecurityContext" (dict "runAsUser" 999) | nindent 12 }}
           command:
             - sh
             - -c
@@ -32,10 +37,16 @@ spec:
           volumeMounts:
             - name: migration
               mountPath: /migrations
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            {{- toYaml .Values.migrate.resources | nindent 12 }}
       containers:
         - name: rider
           image: "{{ .Values.global.image.registry }}/{{ .Values.image.repository }}:{{ .Values.global.image.tag }}"
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          securityContext:
+            {{- include "veloshare.containerSecurityContext" (dict "runAsUser" 10001) | nindent 12 }}
           ports:
             - name: http
               containerPort: {{ .Values.containerPort }}
@@ -44,11 +55,14 @@ spec:
                 name: {{ include "veloshare.fullname" . }}-db
             - secretRef:
                 name: veloshare-auth
-          {{- if (.Values.global.logging).enabled }}
+          env:
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
           volumeMounts:
             - name: logs
               mountPath: /var/log/veloshare
-          {{- end }}
+            - name: tmp
+              mountPath: /tmp
           livenessProbe:
             httpGet:
               path: {{ .Values.probePath }}
@@ -67,13 +81,20 @@ spec:
             failureThreshold: 3
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-        {{- if (.Values.global.logging).enabled }}
-        {{- include "veloshare.loggingSidecar" . | nindent 8 }}
+        {{- if .Values.ambassador.enabled }}
+        {{- include "veloshare.ambassadorContainer" (dict "port" .Values.ambassador.port "resources" .Values.ambassador.resources) | nindent 8 }}
         {{- end }}
+        {{- include "veloshare.loggingSidecar" . | nindent 8 }}
       volumes:
+        - name: tmp
+          emptyDir: {}
         - name: migration
           configMap:
             name: {{ include "veloshare.fullname" . }}-migration
-        {{- if (.Values.global.logging).enabled }}
-        {{- include "veloshare.logVolumes" . | nindent 8 }}
+        {{- if .Values.ambassador.enabled }}
+        - name: ambassador-config
+          configMap:
+            name: {{ include "veloshare.fullname" . }}-ambassador
+        {{- include "veloshare.ambassadorVolumes" . | nindent 8 }}
         {{- end }}
+        {{- include "veloshare.logVolumes" . | nindent 8 }}

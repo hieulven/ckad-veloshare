@@ -9,7 +9,7 @@ CHART     ?= ./helm/veloshare
 REGISTRY  ?= veloshare
 TAG       ?= 0.1.0
 
-SERVICES  := pricing rider station trip fleet-monitor frontend
+SERVICES  := pricing rider station trip fleet-monitor frontend pod-lister
 
 # Per-pod config + credentials. env/<name>.env is local-only and gitignored;
 # only env/<name>.env.template is tracked. `make secrets` applies each file to
@@ -17,7 +17,8 @@ SERVICES  := pricing rider station trip fleet-monitor frontend
 ENV_DIR   ?= env
 ENV_FILES := postgres rider station trip auth
 
-.PHONY: help cluster-up cluster-down lint template deploy uninstall images load ingress up env-init secrets
+.PHONY: help cluster-up cluster-down lint template deploy uninstall images load ingress up env-init secrets seed \
+	metrics-server history rollback bluegreen-demo bluegreen-clean demo smoke-test
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -40,6 +41,16 @@ deploy: lint ## Install/upgrade the platform onto the cluster
 
 uninstall: ## Remove the platform release (asks first in practice)
 	helm uninstall $(RELEASE) -n $(NAMESPACE)
+
+history: ## Show Helm release revision history
+	helm -n $(NAMESPACE) history $(RELEASE)
+
+rollback: ## Roll back the Helm release to revision REV (make rollback REV=2)
+	@if [ -z "$(REV)" ]; then \
+		echo "REV is required, e.g.: make rollback REV=2 (see: make history)"; \
+		exit 1; \
+	fi
+	helm -n $(NAMESPACE) rollback $(RELEASE) $(REV)
 
 images: ## Build all app images
 	@for svc in $(SERVICES); do \
@@ -64,30 +75,50 @@ env-init: ## Create env/*.env from the templates (does not overwrite existing fi
 	@echo "Now edit $(ENV_DIR)/*.env and replace every change-me value, then run: make secrets"
 
 secrets: ## Apply env/*.env to the cluster as per-pod Secrets (never via Helm/git)
-	@missing=0; for f in $(ENV_FILES); do \
-		[ -f $(ENV_DIR)/$$f.env ] || { echo "missing $(ENV_DIR)/$$f.env"; missing=1; }; \
-	done; \
-	if [ $$missing -ne 0 ]; then \
-		echo "-> run 'make env-init' to create them from the templates, then edit the values"; \
-		exit 1; \
-	fi
-	@if grep -rlqE '^[A-Za-z_][A-Za-z0-9_]*=change-me' $(ENV_DIR)/*.env 2>/dev/null; then \
-		echo "refusing: these $(ENV_DIR)/*.env values are still template placeholders:"; \
-		grep -rnE '^[A-Za-z_][A-Za-z0-9_]*=change-me' $(ENV_DIR)/*.env | sed 's/^/    /'; \
-		exit 1; \
-	fi
-	@kubectl create namespace $(NAMESPACE) --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-	@set -e; \
-	 apply() { kubectl -n $(NAMESPACE) create secret generic $$1 --from-env-file=$$2 \
-	     --dry-run=client -o yaml | kubectl apply -f - >/dev/null; echo "  secret/$$1 <- $$2"; }; \
-	 apply postgres       $(ENV_DIR)/postgres.env; \
-	 apply rider-db       $(ENV_DIR)/rider.env; \
-	 apply station-db     $(ENV_DIR)/station.env; \
-	 apply trip-db        $(ENV_DIR)/trip.env; \
-	 apply veloshare-auth $(ENV_DIR)/auth.env
+	@NAMESPACE=$(NAMESPACE) ENV_DIR=$(ENV_DIR) ./scripts/apply-secrets.sh
+
+seed: ## Seed demo stations/riders/trips through http://localhost/api/* (safe to re-run)
+	@./scripts/seed-data.sh
 
 ingress: ## Install the kind ingress-nginx controller and wait for it
 	kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
 	kubectl -n ingress-nginx wait --for=condition=available deploy/ingress-nginx-controller --timeout=180s
 
+metrics-server: ## Install metrics-server, patched for kind (--kubelet-insecure-tls), so the pricing HPA works
+	kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+	@if kubectl -n kube-system get deploy metrics-server -o jsonpath='{.spec.template.spec.containers[0].args}' | grep -q -- '--kubelet-insecure-tls'; then \
+		echo "  metrics-server already patched with --kubelet-insecure-tls"; \
+	else \
+		echo "  patching metrics-server for kind (kubelet serving certs aren't CA-signed)"; \
+		kubectl -n kube-system patch deployment metrics-server --type='json' \
+			-p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'; \
+	fi
+	kubectl -n kube-system rollout status deploy/metrics-server --timeout=180s
+
 up: cluster-up ingress secrets images load deploy ## Create cluster, install ingress, apply secrets, build/load images, and deploy
+
+bluegreen-demo: ## Apply the blue/green Service-selector-flip lab (bluegreen-demo.yaml)
+	kubectl apply -n $(NAMESPACE) -f bluegreen-demo.yaml
+	@echo ""
+	@echo "Deployed bluegreen-demo-blue + bluegreen-demo-green; Service bluegreen-demo currently -> blue."
+	@echo ""
+	@echo "Verify which color is serving:"
+	@echo "  kubectl -n $(NAMESPACE) get svc bluegreen-demo -o jsonpath='{.spec.selector.color}{\"\\n\"}'"
+	@echo "  kubectl -n $(NAMESPACE) run bluegreen-curl --rm -it --restart=Never --image=curlimages/curl -- curl -s bluegreen-demo/"
+	@echo ""
+	@echo "Flip traffic to green:"
+	@echo "  kubectl -n $(NAMESPACE) patch svc bluegreen-demo -p '{\"spec\":{\"selector\":{\"color\":\"green\"}}}'"
+	@echo "Flip back to blue:"
+	@echo "  kubectl -n $(NAMESPACE) patch svc bluegreen-demo -p '{\"spec\":{\"selector\":{\"color\":\"blue\"}}}'"
+	@echo ""
+	@echo "Clean up when done: make bluegreen-clean"
+
+bluegreen-clean: ## DESTRUCTIVE: delete the blue/green demo Deployments/ConfigMaps/Service
+	@echo "DESTRUCTIVE: deleting bluegreen-demo-blue, bluegreen-demo-green, their ConfigMaps, and the Service."
+	kubectl delete -n $(NAMESPACE) -f bluegreen-demo.yaml
+
+demo: ## Run the guided end-to-end demo script
+	@./scripts/demo.sh
+
+smoke-test: ## Run smoke tests against the deployed platform
+	@./scripts/smoke-test.sh

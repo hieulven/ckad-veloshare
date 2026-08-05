@@ -39,6 +39,7 @@ data:
         # open files" when several pods start at once.
         Inotify_Watcher   Off
 
+    {{- if .Values.global.logging.enabled }}
     [OUTPUT]
         Name                es
         Match               *
@@ -47,3 +48,12 @@ data:
         Index               veloshare-logs
         Suppress_Type_Name  On
         Retry_Limit         False
+    {{- else }}
+    # Elasticsearch/Kibana are disabled (global.logging.enabled=false) — ship
+    # to the log-agent sidecar's own stdout instead, so `kubectl logs <pod> -c
+    # log-agent` still shows every app pod's JSON log lines.
+    [OUTPUT]
+        Name    stdout
+        Match   *
+        Format  json_lines
+    {{- end }}

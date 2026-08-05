@@ -14,13 +14,22 @@ image:
 
 service:
   port: 80
+  # CKAD learning demo of the NodePort Service type — reachable at
+  # <any-node-IP>:<nodePort>, not just from inside the cluster. Left unset so
+  # Kubernetes auto-assigns one from the 30000-32767 range (`kubectl -n
+  # veloshare get svc frontend`); set a fixed value here (e.g. 30080) to pin
+  # it. Note: on this kind cluster, only the ports kind-config.yaml maps as
+  # extraPortMappings are reachable from the host — an auto-assigned/new
+  # nodePort is reachable from inside the cluster (any node/pod) but needs a
+  # kind-config.yaml change + cluster recreate to also reach it from the host.
+  nodePort: ""
 
 containerPort: 8080
 
 resources:
   requests:
-    cpu: 25m
+    cpu: 10m
     memory: 32Mi
   limits:
-    cpu: 100m
+    cpu: 50m
     memory: 64Mi

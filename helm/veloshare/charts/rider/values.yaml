@@ -21,11 +21,11 @@ probePath: /healthz
 
 resources:
   requests:
-    cpu: 50m
-    memory: 64Mi
+    cpu: 25m
+    memory: 96Mi
   limits:
-    cpu: 250m
-    memory: 128Mi
+    cpu: 150m
+    memory: 192Mi
 
 # Postgres schema `riders` / DB user `rider`. Dev-only placeholder password —
 # injected into the app via the rider-db Secret and used by the migration
@@ -35,3 +35,54 @@ resources:
 
 logging:
   enabled: true   # effective flag is global.logging.enabled
+
+# CKAD learning demo of the ambassador pattern (see veloshare.ambassadorContainer
+# in _helpers.tpl): a local nginx sits in the Pod in front of rider and proxies
+# to it over 127.0.0.1. The Service targets this port instead of containerPort
+# when enabled.
+ambassador:
+  enabled: true
+  port: 8080
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 50m
+      memory: 64Mi
+
+# CKAD learning demo of the init-container pattern (see veloshare.configCheckInit
+# in _helpers.tpl) — fails fast, before migrate/app/ambassador start, if any of
+# these (sourced from the same rider-db + veloshare-auth Secrets as the app) is
+# missing. Mirrors the require_env() calls in rider/main.py.
+configCheck:
+  enabled: true
+  requiredVars:
+    - DB_PASSWORD
+    - JWT_SECRET
+    - ADMIN_EMAIL
+    - ADMIN_PASSWORD
+  envFrom:
+    - secretRef:
+        name: rider-db
+    - secretRef:
+        name: veloshare-auth
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 50m
+      memory: 64Mi
+
+# Schema migration init container (psql). Runs migrate.sql from the
+# <svc>-migration ConfigMap before the app container starts. Needs a little
+# more headroom than config-check since it's a real postgres client.
+migrate:
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi

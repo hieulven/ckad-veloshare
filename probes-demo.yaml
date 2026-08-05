@@ -1,0 +1,91 @@
+# CKAD learning lab: HTTP liveness + file-based readiness + a startup probe
+# for a deliberately slow-starting container, together on one Pod.
+#
+# Not part of the Helm chart — every app service already has an HTTP
+# liveness probe on /healthz (see CLAUDE.md), so that part's already covered
+# platform-wide. This is a focused, standalone lab for the two NEW pieces:
+# file-based readiness, and why a startup probe matters for a slow starter.
+#
+# Reuses nginxinc/nginx-unprivileged:1.27-alpine (already used by frontend/
+# the ambassador sidecar elsewhere in this repo) — no new image to build.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: probes-demo
+  namespace: veloshare
+  labels:
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: probes-demo
+spec:
+  securityContext:
+    runAsNonRoot: true
+    fsGroup: 101
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: probes-demo
+      image: nginxinc/nginx-unprivileged:1.27-alpine
+      # Simulates a slow-starting app: nginx doesn't actually start serving
+      # until 30s after the container starts. Without the startupProbe
+      # below, the (much shorter) liveness probe's failure budget would
+      # kill this container before it ever finished starting.
+      command:
+        - sh
+        - -c
+        - "sleep 30 && nginx -g 'daemon off;'"
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        capabilities:
+          drop: ["ALL"]
+      ports:
+        - containerPort: 8080
+      # Startup probe: while this hasn't succeeded yet, liveness AND
+      # readiness are not evaluated at all — so a slow-starting container
+      # isn't killed or marked unready before it's had a chance to come up.
+      # 10 x 5s = up to 50s to start, comfortably covering the 30s sleep.
+      startupProbe:
+        httpGet:
+          path: /
+          port: 8080
+        periodSeconds: 5
+        failureThreshold: 10
+      # HTTP liveness probe — the actual "self-healing" mechanism: restarts
+      # the container if nginx stops answering.
+      livenessProbe:
+        httpGet:
+          path: /
+          port: 8080
+        periodSeconds: 5
+        failureThreshold: 3
+      # File-based readiness probe (not HTTP): the container is only marked
+      # Ready once /tmp/ready exists. Nothing creates it automatically, so
+      # the Pod starts and stays NotReady (0/1) until you manually
+      # `kubectl exec ... -- touch /tmp/ready`, and flips back if you `rm`
+      # it. This is the pattern for gating readiness on a signal an HTTP
+      # endpoint can't easily express (a warm-up marker, a manual gate...).
+      readinessProbe:
+        exec:
+          command: ["sh", "-c", "test -f /tmp/ready"]
+        periodSeconds: 5
+        failureThreshold: 1
+      volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: nginx-cache
+          mountPath: /var/cache/nginx
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          cpu: 50m
+          memory: 32Mi
+  volumes:
+    - name: tmp
+      emptyDir: {}
+    - name: nginx-cache
+      emptyDir: {}
