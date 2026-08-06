@@ -1,0 +1,81 @@
+# Lab 4.1 — stub Services for the backends the frontend image expects.
+#
+# WHY THIS FILE EXISTS, because it is not obvious and it is a genuinely useful
+# thing to have hit once:
+#
+# veloshare/frontend ships a baked-in nginx.conf (services/frontend/nginx.conf)
+# that reverse-proxies four backends -- pricing, rider, station and trip. The lab
+# namespace only runs pricing. nginx resolves every `proxy_pass` upstream
+# hostname ONCE, at startup, and refuses to start if any of them is unresolvable:
+#
+#   nginx: [emerg] host not found in upstream "rider" in
+#   /etc/nginx/conf.d/default.conf:19
+#
+# The container then CrashLoopBackOffs, the frontend Service has no endpoints,
+# and the Ingress returns 503 for `/` -- three symptoms, one cause, none of them
+# pointing at DNS unless you read the container log. It is the exact failure the
+# Day 5 triage lab teaches you to chase.
+#
+# The fix keeps the real image unmodified: give those names something to resolve
+# to. These are SELECTOR-LESS Services -- no `selector:` field, so they select no
+# Pods and will always have zero endpoints. That is fine and deliberate. A
+# ClusterIP Service gets a cluster IP and a DNS A record whether or not anything
+# is behind it, which is all nginx needs at startup. Traffic to /api/riders/ etc.
+# would fail at request time with 502, but nothing in this lab sends any.
+#
+# (A selector-less Service is also the normal way to point at an external
+# endpoint via a hand-written EndpointSlice -- worth knowing for the exam.)
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rider
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: rider
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "4.1"
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: station
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: station
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "4.1"
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trip
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: trip
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "4.1"
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
+      protocol: TCP

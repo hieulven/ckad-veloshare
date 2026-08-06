@@ -227,6 +227,59 @@ wait_for_status() {
   return 1
 }
 
+# Poll until a Service has (or loses) an endpoint address. Endpoint propagation
+# is directly observable, so waiting on the real condition beats guessing a
+# sleep duration -- it is both faster in the common case and correct in the slow
+# one. Every `sleep N` in these labs was replaced by one of these.
+wait_endpoints() {
+  local svc="$1" timeout="${2:-60}" i=0
+  while [ $i -lt "$timeout" ]; do
+    [ -n "$(k get endpoints "$svc" -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null)" ] && return 0
+    sleep 1; i=$((i + 1))
+  done
+  return 1
+}
+
+wait_no_endpoints() {
+  local svc="$1" timeout="${2:-60}" i=0
+  while [ $i -lt "$timeout" ]; do
+    [ -z "$(k get endpoints "$svc" -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null)" ] && return 0
+    sleep 1; i=$((i + 1))
+  done
+  return 1
+}
+
+# Poll until a URL answers through the ingress controller.
+wait_http() {
+  local url="$1" timeout="${2:-60}" i=0
+  while [ $i -lt "$timeout" ]; do
+    curl -sSf --max-time 3 -o /dev/null -H "Host: $LAB_HOST" "$url" >/dev/null 2>&1 && return 0
+    sleep 1; i=$((i + 1))
+  done
+  return 1
+}
+
+# Poll until a Pod's containers report ready == true|false.
+wait_pod_ready_is() {
+  local pod="$1" want="$2" timeout="${3:-90}" i=0
+  while [ $i -lt "$timeout" ]; do
+    [ "$(k get pod "$pod" -o jsonpath='{.status.containerStatuses[0].ready}' 2>/dev/null)" = "$want" ] && return 0
+    sleep 1; i=$((i + 1))
+  done
+  return 1
+}
+
+# Poll until a ReplicaSet records a FailedCreate event (the quota-rejection
+# signal in lab 3.4, which never produces a Pod to wait on).
+wait_rs_failure() {
+  local selector="$1" timeout="${2:-30}" i=0
+  while [ $i -lt "$timeout" ]; do
+    k describe rs -l "$selector" 2>/dev/null | grep -q "exceeded quota" && return 0
+    sleep 1; i=$((i + 1))
+  done
+  return 1
+}
+
 # ============================================================================
 # DAY 3 — Configuration & security
 # ============================================================================
@@ -375,7 +428,7 @@ lab_3_4() {
   note "Objective 2, case A — quota rejection via a DEPLOYMENT (4 replicas x 2 CPU vs a 1 CPU ceiling)."
   note "This is the case that catches people out: 'apply' SUCCEEDS and nothing ever comes up."
   run "kubectl apply -f $SCRIPT_DIR/$d/rejected/deployment-oversized.yaml"
-  sleep 3
+  wait_rs_failure "lab=3.4-oversized" 30 || true
   run "kubectl -n $NS get deploy lab-oversized"
   run "kubectl -n $NS get pods -l lab=3.4-oversized"
   note "The real error is an event on the ReplicaSet, never on your terminal:"
@@ -409,6 +462,7 @@ lab_4_1() {
   local d="${LAB_DIR[4.1]}"
   require_files "$d/deployment-pricing.yaml" "$d/service-pricing-clusterip.yaml" \
                 "$d/deployment-frontend.yaml" "$d/service-frontend-nodeport.yaml" \
+                "$d/services-stub-backends.yaml" \
                 "$d/broken/service-pricing-selector-mismatch.yaml" \
                 "$d/fixed/service-pricing-selector-fixed.yaml" || return 1
 
@@ -416,9 +470,13 @@ lab_4_1() {
   note "The backend Service is named 'pricing' on purpose: veloshare/frontend's baked-in"
   note "nginx.conf proxies /api/pricing/ to http://pricing/, so the real image works unmodified."
   run "kubectl apply -f $SCRIPT_DIR/$d/deployment-pricing.yaml -f $SCRIPT_DIR/$d/service-pricing-clusterip.yaml"
+  note "The frontend image's baked-in nginx.conf also proxies rider/station/trip, and nginx"
+  note "refuses to start if ANY proxy_pass hostname fails to resolve. Selector-less stub"
+  note "Services give those names a DNS record -- see services-stub-backends.yaml."
+  run "kubectl apply -f $SCRIPT_DIR/$d/services-stub-backends.yaml"
   run "kubectl apply -f $SCRIPT_DIR/$d/deployment-frontend.yaml -f $SCRIPT_DIR/$d/service-frontend-nodeport.yaml"
-  k rollout status deploy/pricing --timeout=150s >/dev/null 2>&1 || true
-  k rollout status deploy/frontend --timeout=150s >/dev/null 2>&1 || true
+  k rollout status deploy/pricing --timeout=90s >/dev/null 2>&1 || true
+  k rollout status deploy/frontend --timeout=90s >/dev/null 2>&1 || true
   run "kubectl -n $NS get deploy,svc -l app.kubernetes.io/component=ckad-lab"
 
   note "Objective 3 — Endpoints. This is the one-command answer to 'why does my Service not work'."
@@ -430,7 +488,7 @@ lab_4_1() {
 
   note "Objective 2 — break the selector on purpose, then diagnose it."
   run "kubectl apply -f $SCRIPT_DIR/$d/broken/service-pricing-selector-mismatch.yaml"
-  sleep 3
+  wait_no_endpoints pricing 30 || true
   run "kubectl -n $NS get endpoints pricing"
   note "Empty Endpoints is ALWAYS one of two things: the selector matches no Pod labels,"
   note "or no matching Pod is Ready. Compare the two label sets directly:"
@@ -439,7 +497,7 @@ lab_4_1() {
 
   note "Now fix it — a single apply, because the selector was the only thing wrong."
   run "kubectl apply -f $SCRIPT_DIR/$d/fixed/service-pricing-selector-fixed.yaml"
-  sleep 3
+  wait_endpoints pricing 30 || true
   run "kubectl -n $NS get endpoints pricing"
 
   echo
@@ -462,7 +520,7 @@ lab_4_2() {
   note "path in the object it is set on, so mixing them would rewrite '/' as well. The platform"
   note "learned this the hard way — see the incident comment in helm/veloshare/templates/ingress-api.yaml."
   run "kubectl apply -f $SCRIPT_DIR/$d/ingress-frontend.yaml -f $SCRIPT_DIR/$d/ingress-api.yaml"
-  sleep 5
+  wait_http "$INGRESS_URL/api/healthz" 60 || true
   run "kubectl -n $NS get ingress"
 
   note "Both Ingresses set host '$LAB_HOST' so they cannot collide with the live veloshare"
@@ -476,11 +534,11 @@ lab_4_2() {
 
   echo
   check "/api/healthz routes to the pricing backend" \
-    "curl -sS --max-time 10 -H 'Host: $LAB_HOST' $INGRESS_URL/api/healthz" '"status":"ok"'
+    "curl -sS --max-time 8 -H 'Host: $LAB_HOST' $INGRESS_URL/api/healthz" '"status":"ok"'
   check "/api/tiers routes to the pricing backend" \
-    "curl -sS --max-time 10 -H 'Host: $LAB_HOST' $INGRESS_URL/api/tiers" "unlock_fee_cents"
+    "curl -sS --max-time 8 -H 'Host: $LAB_HOST' $INGRESS_URL/api/tiers" "unlock_fee_cents"
   check "/ routes to the frontend" \
-    "curl -sS --max-time 10 -o /dev/null -w '%{http_code}' -H 'Host: $LAB_HOST' $INGRESS_URL/" "200"
+    "curl -sS --max-time 8 -o /dev/null -w '%{http_code}' -H 'Host: $LAB_HOST' $INGRESS_URL/" "200"
   check "two Ingress objects, two backends" \
     "test \$(k get ingress --no-headers | wc -l) -ge 2 && echo ok" "ok"
 }
@@ -494,16 +552,16 @@ lab_4_3() {
 
   note "This lab needs lab 4.1's pricing + frontend Deployments. Applying them if absent."
   k get deploy pricing >/dev/null 2>&1 || run "kubectl apply -f $SCRIPT_DIR/${LAB_DIR[4.1]}/deployment-pricing.yaml -f $SCRIPT_DIR/${LAB_DIR[4.1]}/service-pricing-clusterip.yaml"
-  k get deploy frontend >/dev/null 2>&1 || run "kubectl apply -f $SCRIPT_DIR/${LAB_DIR[4.1]}/deployment-frontend.yaml -f $SCRIPT_DIR/${LAB_DIR[4.1]}/service-frontend-nodeport.yaml"
-  k rollout status deploy/pricing --timeout=150s >/dev/null 2>&1 || true
-  k rollout status deploy/frontend --timeout=150s >/dev/null 2>&1 || true
+  k get deploy frontend >/dev/null 2>&1 || run "kubectl apply -f $SCRIPT_DIR/${LAB_DIR[4.1]}/services-stub-backends.yaml -f $SCRIPT_DIR/${LAB_DIR[4.1]}/deployment-frontend.yaml -f $SCRIPT_DIR/${LAB_DIR[4.1]}/service-frontend-nodeport.yaml"
+  k rollout status deploy/pricing --timeout=90s >/dev/null 2>&1 || true
+  k rollout status deploy/frontend --timeout=90s >/dev/null 2>&1 || true
 
   note "An unauthorised client Pod, deliberately NOT labelled as the frontend."
   run "kubectl apply -f $SCRIPT_DIR/$d/test-client.yaml"
   wait_ready pod/lab-netpol-client
 
   note "Baseline BEFORE any policy — everything can reach everything."
-  run "kubectl -n $NS exec lab-netpol-client -- python -c \"import urllib.request;print(urllib.request.urlopen('http://pricing/healthz',timeout=5).read().decode())\" || true"
+  run "kubectl -n $NS exec lab-netpol-client -- python -c \"import urllib.request;print(urllib.request.urlopen('http://pricing/healthz',timeout=3).read().decode())\" || true"
 
   note "Objective 1 — default-deny first, then add back exactly what is needed."
   note "Order matters conceptually, not mechanically: policies are purely additive allow-lists,"
@@ -513,7 +571,9 @@ lab_4_3() {
   run "kubectl apply -f $SCRIPT_DIR/$d/networkpolicy-allow-frontend-to-pricing.yaml"
   run "kubectl apply -f $SCRIPT_DIR/$d/networkpolicy-allow-ingress-to-frontend.yaml"
   run "kubectl -n $NS get networkpolicy"
-  sleep 5
+  # The one place a fixed sleep is honest: the CNI applies policies
+  # asynchronously and exposes no readiness signal to poll.
+  sleep 2
 
   note "ALLOWED — frontend to pricing, which the policy names explicitly:"
   run "kubectl -n $NS exec deploy/frontend -- wget -qO- --timeout=5 http://pricing/healthz; echo"
@@ -521,20 +581,20 @@ lab_4_3() {
   note "DENIED — the same request from the unauthorised client. Note it HANGS rather than"
   note "refusing: a dropped packet looks like a timeout, not a connection error. That"
   note "distinction is how you tell a NetworkPolicy from a wrong port."
-  run "kubectl -n $NS exec lab-netpol-client -- python -c \"import urllib.request;print(urllib.request.urlopen('http://pricing/healthz',timeout=5).read().decode())\" || true"
+  run "kubectl -n $NS exec lab-netpol-client -- python -c \"import urllib.request;print(urllib.request.urlopen('http://pricing/healthz',timeout=3).read().decode())\" || true"
 
   note "Objective 2 — deny backend egress to the internet."
   run "kubectl apply -f $SCRIPT_DIR/$d/networkpolicy-deny-external-egress.yaml"
-  sleep 5
-  run "kubectl -n $NS exec deploy/pricing -- python -c \"import socket;socket.create_connection(('1.1.1.1',443),timeout=5);print('reached the internet')\" || true"
+  sleep 2
+  run "kubectl -n $NS exec deploy/pricing -- python -c \"import socket;socket.create_connection(('1.1.1.1',443),timeout=3);print('reached the internet')\" || true"
 
   echo
   check "allowed path still works (frontend -> pricing)" \
     "k exec deploy/frontend -- wget -qO- --timeout=8 http://pricing/healthz" '"status":"ok"'
   check_fails "unauthorised client is blocked" \
-    "k exec lab-netpol-client -- python -c \"import urllib.request;urllib.request.urlopen('http://pricing/healthz',timeout=6)\""
+    "k exec lab-netpol-client -- python -c \"import urllib.request;urllib.request.urlopen('http://pricing/healthz',timeout=3)\""
   check_fails "backend egress to the internet is blocked" \
-    "k exec deploy/pricing -- python -c \"import socket;socket.create_connection(('1.1.1.1',443),timeout=6)\""
+    "k exec deploy/pricing -- python -c \"import socket;socket.create_connection(('1.1.1.1',443),timeout=3)\""
   check "DNS still resolves (the rule people forget)" \
     "k exec deploy/frontend -- wget -qO- --timeout=8 http://pricing/healthz" '"status":"ok"'
   # Both lab 4.2 routes, not just one. /api survives on the pricing policy's
@@ -542,9 +602,9 @@ lab_4_3() {
   # first would hide that.
   if k get ingress lab-frontend >/dev/null 2>&1; then
     check "Ingress route /api still reachable under the policies" \
-      "curl -sS --max-time 10 -H 'Host: $LAB_HOST' $INGRESS_URL/api/healthz" '"status":"ok"'
+      "curl -sS --max-time 8 -H 'Host: $LAB_HOST' $INGRESS_URL/api/healthz" '"status":"ok"'
     check "Ingress route / still reachable under the policies" \
-      "curl -sS --max-time 10 -o /dev/null -w '%{http_code}' -H 'Host: $LAB_HOST' $INGRESS_URL/" "200"
+      "curl -sS --max-time 8 -o /dev/null -w '%{http_code}' -H 'Host: $LAB_HOST' $INGRESS_URL/" "200"
   fi
 
   # The default-deny selects EVERY Pod in the namespace, which would quietly
@@ -614,7 +674,7 @@ lab_5_1() {
   note "While the startupProbe is running, liveness and readiness are SUSPENDED. That is the"
   note "entire reason startupProbe exists: a slow starter would otherwise be killed by its"
   note "own liveness probe before it finished booting."
-  sleep 12
+  wait_pod_ready_is lab-probes false 60 || true
   run "kubectl -n $NS get pod lab-probes"
 
   note "The readiness probe is 'cat /tmp/ready' and that file does not exist yet, so the Pod"
@@ -623,14 +683,14 @@ lab_5_1() {
 
   note "Create the file. Readiness flips within one probe period and the endpoint appears."
   run "kubectl -n $NS exec lab-probes -- touch /tmp/ready"
-  sleep 8
+  wait_pod_ready_is lab-probes true 30 || true
   run "kubectl -n $NS get pod lab-probes"
   run "kubectl -n $NS get endpoints lab-probes"
 
   note "Now remove it again. The endpoint disappears — but RESTARTS stays 0."
   note "That is the difference the exam tests: readiness removes traffic, liveness restarts."
   run "kubectl -n $NS exec lab-probes -- rm -f /tmp/ready"
-  sleep 8
+  wait_pod_ready_is lab-probes false 30 || true
   run "kubectl -n $NS get pod lab-probes"
   run "kubectl -n $NS get endpoints lab-probes"
 
@@ -640,7 +700,7 @@ lab_5_1() {
   check "Endpoints are empty while not Ready" \
     "test -z \"\$(k get endpoints lab-probes -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null)\" && echo ok" "ok"
   run "kubectl -n $NS exec lab-probes -- touch /tmp/ready" >/dev/null 2>&1
-  sleep 8
+  wait_pod_ready_is lab-probes true 30 || true
   check "Pod becomes Ready once the file exists" \
     "k get pod lab-probes -o jsonpath='{.status.containerStatuses[0].ready}'" "true"
   check "readiness churn did NOT restart the container" \
@@ -656,10 +716,13 @@ lab_5_2() {
   note "Objective 1 — 'kubectl logs -c'. A two-container Pod (pricing + the ambassador nginx"
   note "sidecar the real platform uses) makes -c necessary rather than decorative."
   run "kubectl apply -f $SCRIPT_DIR/$d/configmap-ambassador.yaml -f $SCRIPT_DIR/$d/deployment-multicontainer.yaml"
-  k rollout status deploy/lab-observe --timeout=150s >/dev/null 2>&1 || true
+  k rollout status deploy/lab-observe --timeout=90s >/dev/null 2>&1 || true
   run "kubectl -n $NS get pod -l app.kubernetes.io/name=pricing,lab=5.2"
 
-  note "Without -c, kubectl refuses and tells you the container names:"
+  note "Without -c, modern kubectl does NOT refuse -- it picks the first container and says so:"
+  note "  Defaulted container \"pricing\" out of: pricing, ambassador"
+  note "Older kubectl errored out instead. Either way, never rely on the default: it silently"
+  note "changes which container you are reading if the Pod spec is reordered."
   run "kubectl -n $NS logs deploy/lab-observe --tail=5 || true"
   run "kubectl -n $NS logs deploy/lab-observe -c pricing --tail=5"
   run "kubectl -n $NS logs deploy/lab-observe -c ambassador --tail=5"
@@ -692,14 +755,14 @@ lab_5_2() {
     "k logs deploy/lab-observe -c pricing --tail=20" "pricing"
   check "logs -c selects the sidecar" \
     "k logs deploy/lab-observe -c ambassador --tail=20 2>&1 | head -1; echo ok" "ok"
-  check_fails "logs without -c is rejected on a multi-container Pod" \
-    "k logs deploy/lab-observe --tail=1" "container"
+  check "logs without -c defaults to the first container and announces it" \
+    "k logs deploy/lab-observe --tail=1 2>&1" "Defaulted container"
   check "crashlooping Pod has restarted at least once" \
     "test \"\$(k get pod lab-crashloop -o jsonpath='{.status.containerStatuses[0].restartCount}')\" -ge 1 && echo ok" "ok"
   check "--previous shows why the last instance died" \
     "k logs lab-crashloop --previous" "simulated crash"
   check "events are readable for the failing Pod" \
-    "k describe pod lab-crashloop" "Started container"
+    "k describe pod lab-crashloop" "Container started"
 }
 
 lab_5_3() {
@@ -712,30 +775,30 @@ lab_5_3() {
   note "so this one never reaches the cluster at all. Read the error, it names the field."
   run "kubectl apply -f $SCRIPT_DIR/$d/broken/1-deployment-selector.yaml || true"
   run "kubectl apply -f $SCRIPT_DIR/$d/fixed/1-deployment-selector.yaml"
-  k rollout status deploy/lab-triage-selector --timeout=120s >/dev/null 2>&1 || true
+  k rollout status deploy/lab-triage-selector --timeout=90s >/dev/null 2>&1 || true
   run "kubectl -n $NS get deploy lab-triage-selector"
 
   note "Bug 2 — Service targetPort 8080 against a container listening on 8000."
   note "The nastiest of the three, because Endpoints ARE populated: the selector is fine and"
   note "the Pod is Ready. Everything looks healthy and nothing works."
   run "kubectl apply -f $SCRIPT_DIR/$d/broken/2-service-targetport.yaml"
-  k rollout status deploy/lab-triage-port --timeout=120s >/dev/null 2>&1 || true
-  sleep 3
+  k rollout status deploy/lab-triage-port --timeout=90s >/dev/null 2>&1 || true
+  wait_endpoints lab-triage-port 30 || true
   run "kubectl -n $NS get endpoints lab-triage-port"
   note "Endpoints present — note the :8080 — yet the connection fails:"
   run "kubectl -n $NS exec deploy/lab-triage-port -- python -c \"import urllib.request;print(urllib.request.urlopen('http://lab-triage-port/healthz',timeout=5).read())\" || true"
   run "kubectl apply -f $SCRIPT_DIR/$d/fixed/2-service-targetport.yaml"
-  sleep 3
+  wait_endpoints lab-triage-port 30 || true
   run "kubectl -n $NS get endpoints lab-triage-port"
   run "kubectl -n $NS exec deploy/lab-triage-port -- python -c \"import urllib.request;print(urllib.request.urlopen('http://lab-triage-port/healthz',timeout=5).read().decode())\""
 
   note "Bug 3 — an image tag that was never loaded into the kind cluster."
   run "kubectl apply -f $SCRIPT_DIR/$d/broken/3-deployment-image.yaml"
-  sleep 12
+  wait_for_status "$(k get pod -l lab=5.3-image -o name 2>/dev/null | head -1 | cut -d/ -f2)" "ImagePull" 45 || sleep 5
   run "kubectl -n $NS get pods -l lab=5.3-image"
   run "kubectl -n $NS describe pod -l lab=5.3-image | grep -A3 -i 'failed\\|error' | head -10"
   run "kubectl apply -f $SCRIPT_DIR/$d/fixed/3-deployment-image.yaml"
-  k rollout status deploy/lab-triage-image --timeout=150s >/dev/null 2>&1 || true
+  k rollout status deploy/lab-triage-image --timeout=90s >/dev/null 2>&1 || true
   run "kubectl -n $NS get deploy lab-triage-image"
 
   echo

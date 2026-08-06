@@ -30,6 +30,9 @@ make rollback REV=<n>   # helm rollback veloshare <n> -n veloshare
 make metrics-server     # install metrics-server (kind needs --kubelet-insecure-tls) so the HPA works
 make smoke-test         # scripts/smoke-test.sh — non-interactive E2E check, non-zero exit on failure
 make demo               # scripts/demo.sh — step-by-step walkthrough of the CKAD demo checklist
+make lab                # lab/run-lab.sh — instructor's Day 3-5 CKAD labs, step by step
+                          # (make lab LAB=4.3 or LAB=day4 for one lab/day; lab-auto, lab-list,
+                          # lab-clean). Runs in namespace `veloshare-lab`, never `veloshare`.
 make evidence           # AUTO=1 scripts/demo.sh — read-only pass, refreshes docs/evidence/*.yaml
 make bluegreen-demo     # apply k8s/labs/bluegreen-demo.yaml (standalone lab, not part of the chart)
 make uninstall          # helm uninstall veloshare -n veloshare  (ask before running)

@@ -24,7 +24,8 @@ ENV_DIR   ?= env
 ENV_FILES := postgres rider station trip auth
 
 .PHONY: help cluster-up cluster-down lint template deploy gen-k8s deploy-kubectl uninstall images images-demo-tag load ingress up env-init secrets seed \
-	metrics-server history rollback bluegreen-demo bluegreen-clean demo evidence smoke-test
+	metrics-server history rollback bluegreen-demo bluegreen-clean demo evidence smoke-test \
+	lab lab-auto lab-list lab-clean
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -135,6 +136,18 @@ bluegreen-demo: ## Apply the blue/green Service-selector-flip lab (k8s/labs/blue
 bluegreen-clean: ## DESTRUCTIVE: delete the blue/green demo Deployments/ConfigMaps/Service
 	@echo "DESTRUCTIVE: deleting bluegreen-demo-blue, bluegreen-demo-green, their ConfigMaps, and the Service."
 	kubectl delete -n $(NAMESPACE) -f k8s/labs/bluegreen-demo.yaml
+
+lab: ## Run the CKAD Day 3-5 labs step by step (make lab LAB=4.3 for one lab or one day)
+	@./lab/run-lab.sh $(LAB)
+
+lab-auto: ## Run all 12 CKAD labs unattended; non-zero exit if any check fails
+	@./lab/run-lab.sh --auto $(LAB)
+
+lab-list: ## List the 12 CKAD labs and where their manifests live
+	@./lab/run-lab.sh --list
+
+lab-clean: ## DESTRUCTIVE: delete the veloshare-lab namespace (asks first)
+	@./lab/run-lab.sh --clean
 
 demo: ## Run the guided end-to-end demo script
 	@./scripts/demo.sh

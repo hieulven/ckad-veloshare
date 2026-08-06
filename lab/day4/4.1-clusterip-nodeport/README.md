@@ -27,6 +27,7 @@ abstract `<none>` in `kubectl get endpoints`.
 | `deployment-pricing.yaml` | Backend Deployment, 2 replicas, port 8000, `/healthz` probes. |
 | `service-pricing-clusterip.yaml` | ClusterIP Service `pricing`, port 80 -> targetPort 8000. |
 | `deployment-frontend.yaml` | Frontend Deployment, 1 replica, port 8080, `/` probes. |
+| `services-stub-backends.yaml` | Selector-less ClusterIP Services named `rider`, `station`, `trip`. The frontend image's baked-in nginx.conf proxies all four backends and nginx **refuses to start if any `proxy_pass` hostname does not resolve** — without these the frontend CrashLoopBackOffs and `/` returns 503. They intentionally have no endpoints; nginx only needs a DNS record at startup. |
 | `service-frontend-nodeport.yaml` | NodePort Service `frontend`, port 80 -> targetPort 8080, fixed `nodePort: 30081`. |
 | `broken/service-pricing-selector-mismatch.yaml` | Same Service, selector `app.kubernetes.io/name: pricing-api` — matches no Pod. |
 | `fixed/service-pricing-selector-fixed.yaml` | The corrected Service — a single `apply` undoes the break. |
