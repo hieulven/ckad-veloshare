@@ -26,7 +26,8 @@ resources:
   - service-trip.yaml
   - statefulset-postgres.yaml
   - deployment-frontend.yaml
-  - deployment-pricing.yaml
+  - deployment-pricing-blue.yaml
+  - deployment-pricing-green.yaml
   - deployment-redis.yaml
   - deployment-rider.yaml
   - deployment-station.yaml

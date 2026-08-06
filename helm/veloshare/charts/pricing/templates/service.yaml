@@ -7,8 +7,16 @@ metadata:
     {{- include "veloshare.labels" . | nindent 4 }}
 spec:
   type: ClusterIP
+  # This selector is the blue/green switch. It matches app.kubernetes.io/name:
+  # pricing (both colors) PLUS the one color currently taking traffic, so a
+  # cutover is a single patch here and nothing else moves -- the Service name,
+  # its ClusterIP, and the DNS name http://pricing all stay put, which is why
+  # trip and the frontend never notice a flip.
   selector:
     {{- include "veloshare.selectorLabels" . | nindent 4 }}
+    {{- if .Values.blueGreen.enabled }}
+    color: {{ .Values.blueGreen.activeColor }}
+    {{- end }}
   ports:
     - name: http
       port: {{ .Values.service.port }}

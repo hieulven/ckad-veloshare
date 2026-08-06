@@ -7,7 +7,40 @@
 # http://<service>.veloshare.svc.cluster.local convention.
 fullnameOverride: pricing
 
+# Only used when blueGreen.enabled is false (single Deployment named `pricing`).
+# With blue/green on, each color carries its own replicaCount below.
 replicaCount: 1
+
+# Blue/green deployment (CKAD P3 + D6) on the REAL pricing service.
+#
+# Two Deployments run side by side -- pricing-blue and pricing-green -- both
+# labelled app.kubernetes.io/name: pricing, differing only in `color`. The
+# ClusterIP Service `pricing` selects ONE color, so cutting traffic over is a
+# one-line patch to the Service selector: instant, reversible, and it touches
+# neither Deployment:
+#
+#   kubectl -n veloshare patch svc pricing -p '{"spec":{"selector":{"color":"green"}}}'
+#
+# The colors run genuinely different images, which is what makes the cutover
+# provable rather than cosmetic: blue inherits global.image.tag (0.1.0), green
+# pins 0.2.0. Both are built from the same source by `make images` (see
+# DEMO_TAG in the Makefile) with APP_VERSION baked in at build time, so the
+# Pod that answers cannot misreport itself:
+#
+#   curl -s localhost/api/pricing/version   ->  {"service":"pricing","version":"0.1.0"}
+#   ...flip the selector...                 ->  {"service":"pricing","version":"0.2.0"}
+#
+# `make bluegreen` drives the whole cutover; `make bluegreen-rollback` flips
+# back. Set enabled: false to collapse to a single Deployment named `pricing`.
+blueGreen:
+  enabled: true
+  activeColor: blue
+  blue:
+    replicaCount: 1
+    tag: ""        # empty = inherit global.image.tag
+  green:
+    replicaCount: 1
+    tag: "0.2.0"
 
 image:
   repository: pricing
@@ -18,6 +51,21 @@ service:
 containerPort: 8000
 
 probePath: /healthz
+
+# Startup probe (CKAD O3) -- see veloshare.startupProbe in _helpers.tpl.
+# While this is still failing the kubelet runs NEITHER liveness nor readiness,
+# so a slow first boot (uvicorn import; pricing is stateless, so this is the shortest of the four) can never be
+# misread as a hang and restarted mid-startup. 2s x 30 = a 60s budget to come
+# up; it passes once and then never runs again, after which livenessProbe's
+# deliberately tighter 30s-to-failure window applies -- that budget is for
+# *starting*, not for running.
+# livenessProbe.initialDelaySeconds stays at 5 so the probes are still sane if
+# this is disabled; with it enabled that delay is a no-op (the startup gate has
+# always already elapsed by then).
+startupProbe:
+  enabled: true
+  periodSeconds: 2
+  failureThreshold: 30
 
 resources:
   requests:

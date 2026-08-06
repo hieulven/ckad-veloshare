@@ -57,6 +57,17 @@ spec:
           mountPath: /var/run/postgresql
         - name: tmp
           mountPath: /tmp
+        startupProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - postgres
+            - -d
+            - veloshare
+          periodSeconds: 3
+          timeoutSeconds: 3
+          failureThreshold: 40
         readinessProbe:
           exec:
             command:

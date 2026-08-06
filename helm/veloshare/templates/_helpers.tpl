@@ -103,6 +103,35 @@ capabilities:
 {{- end -}}
 
 {{/*
+Startup probe — the "has it come up yet?" gate, distinct from "is it healthy?"
+(liveness) and "can it take traffic?" (readiness). While a startupProbe is
+defined and still failing, the kubelet does not run the other two at all, so
+the app gets a generous budget to boot without a slow start being mistaken for
+a hung process and restarted by liveness. Once it passes once, it never runs
+again and liveness/readiness take over at their own (tighter) cadence.
+
+That split is why the Python services set failureThreshold * periodSeconds to a
+much larger window than livenessProbe.failureThreshold * periodSeconds would
+allow: uvicorn import + asyncpg pool creation against a cold Postgres can take
+tens of seconds on a laptop kind cluster, while a *running* service that stops
+answering /healthz for 30s really is broken and should be restarted.
+
+Renders ONLY the `startupProbe:` key. Call with a dict:
+  (dict "path" .Values.probePath "port" .Values.containerPort
+        "periodSeconds" .Values.startupProbe.periodSeconds
+        "failureThreshold" .Values.startupProbe.failureThreshold)
+*/}}
+{{- define "veloshare.startupProbe" -}}
+startupProbe:
+  httpGet:
+    path: {{ .path }}
+    port: {{ .port }}
+  periodSeconds: {{ .periodSeconds }}
+  timeoutSeconds: 2
+  failureThreshold: {{ .failureThreshold }}
+{{- end -}}
+
+{{/*
 Fluent Bit logging sidecar — renders ONLY the container list item. Caller
 supplies `containers:` and the nindent level. Tails the shared `logs`
 emptyDir (mounted read-only here, read-write on the app container) and ships

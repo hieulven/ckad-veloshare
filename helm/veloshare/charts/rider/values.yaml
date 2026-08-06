@@ -19,6 +19,21 @@ containerPort: 8000
 
 probePath: /healthz
 
+# Startup probe (CKAD O3) -- see veloshare.startupProbe in _helpers.tpl.
+# While this is still failing the kubelet runs NEITHER liveness nor readiness,
+# so a slow first boot (uvicorn import plus asyncpg pool creation against a cold Postgres) can never be
+# misread as a hang and restarted mid-startup. 2s x 30 = a 60s budget to come
+# up; it passes once and then never runs again, after which livenessProbe's
+# deliberately tighter 30s-to-failure window applies -- that budget is for
+# *starting*, not for running.
+# livenessProbe.initialDelaySeconds stays at 5 so the probes are still sane if
+# this is disabled; with it enabled that delay is a no-op (the startup gate has
+# always already elapsed by then).
+startupProbe:
+  enabled: true
+  periodSeconds: 2
+  failureThreshold: 30
+
 resources:
   requests:
     cpu: 25m

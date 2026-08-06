@@ -1,0 +1,77 @@
+{{- if and .Values.global.networkPolicy.enabled .Values.global.logging.enabled }}
+# elasticsearch — ingress from the log-agent sidecars and from Kibana.
+#
+# Every app Pod (all four backends plus frontend) runs a Fluent Bit log-agent
+# that tails the shared `logs` emptyDir and POSTs to the veloshare-logs index
+# on 9200, so the allow-list here is "every Pod that has a log-agent", plus
+# Kibana, which queries the same port.
+#
+# This whole file is gated on global.logging.enabled together with
+# networkPolicy.enabled: with logging off there is no elasticsearch or kibana
+# Pod for it to select, and the log-agents write to their own stdout instead
+# of over the network.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: elasticsearch-isolation
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "veloshare.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: elasticsearch
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - rider
+                  - station
+                  - trip
+                  - pricing
+                  - frontend
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: kibana
+      ports:
+        - protocol: TCP
+          port: 9200
+---
+# kibana — reached from the ingress controller (the /kibana path on the
+# veloshare Ingress), and reaches Elasticsearch. Nothing else either way.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kibana-isolation
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "veloshare.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: kibana
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 5601
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: elasticsearch
+      ports:
+        - protocol: TCP
+          port: 9200
+{{- end }}

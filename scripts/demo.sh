@@ -284,7 +284,7 @@ step3() {
   echo "  trip's envFrom: DB Secret + own ConfigMap + shared auth Secret:"
   shrun "kubectl -n $NS get deploy trip -o jsonpath='{range .spec.template.spec.containers[?(@.name==\"trip\")].envFrom[*]}  {.secretRef.name}{.configMapRef.name}{\"\n\"}{end}'"
   echo "  pricing's envFrom: ConfigMap only (stateless, needs no DB credential):"
-  shrun "kubectl -n $NS get deploy pricing -o jsonpath='{range .spec.template.spec.containers[?(@.name==\"pricing\")].envFrom[*]}  {.configMapRef.name}{\"\n\"}{end}'"
+  shrun "kubectl -n $NS get deploy pricing-blue -o jsonpath='{range .spec.template.spec.containers[?(@.name==\"pricing\")].envFrom[*]}  {.configMapRef.name}{\"\n\"}{end}'"
   echo "  'describe secret' shows key NAMES and byte counts, never the value:"
   shrun "kubectl -n $NS describe secret trip-db | sed -n '/^Data/,\$p'"
   echo "  Proof that the chart renders no Secret at all (expect 0):"
@@ -337,51 +337,66 @@ step4() {
 step5() {
   banner 5 "Rolling update / blue-green switch" "P2, P3, D6"
 
-  lane "MANIFEST: replica count, and the blue/green colour label"
+  lane "MANIFEST: two colours of the real pricing service, one Service selector"
   echo "  The chart sets replicas + selector but no explicit 'strategy:' block,"
   echo "  so the Deployment takes the API default (RollingUpdate) -- confirmed"
   echo "  against the live object below rather than asserted here:"
   src "$REPO_ROOT/helm/veloshare/charts/pricing/templates/deployment.yaml" '^  replicas:' 6
-  echo "  The blue/green lab is a standalone file (not a chart member) so Helm"
-  echo "  and the lab never fight over the same live object. Two Deployments"
-  echo "  differing only by a 'color' label, one Service selecting on it:"
-  src "$REPO_ROOT/k8s/labs/bluegreen-demo.yaml" '^  name: bluegreen-demo-blue$' 18
-  src "$REPO_ROOT/k8s/labs/bluegreen-demo.yaml" '^kind: Service' 12
+  echo "  Blue/green runs on the REAL pricing service, not a placeholder: one"
+  echo "  template body renders pricing-blue and pricing-green, sharing"
+  echo "  app.kubernetes.io/name=pricing and differing only by 'color'."
+  src "$REPO_ROOT/helm/veloshare/charts/pricing/values.yaml" '^blueGreen:' 10
+  echo "  The Service selector is the switch -- it names the active colour:"
+  src "$REPO_ROOT/helm/veloshare/charts/pricing/templates/service.yaml" '^  selector:' 5
+
+  lane "LIVE: both colours, running genuinely different images"
+  shrun "kubectl -n $NS get deploy -l app.kubernetes.io/name=pricing -o custom-columns=NAME:.metadata.name,COLOR:.metadata.labels.color,IMAGE:.spec.template.spec.containers[0].image,READY:.status.readyReplicas"
+  echo "  Each colour reports its own baked-in APP_VERSION, so neither can lie"
+  echo "  about which image it is running:"
+  shrun "kubectl -n $NS exec deploy/pricing-blue  -c ambassador -- curl -sS --max-time 5 127.0.0.1:8080/version; echo"
+  shrun "kubectl -n $NS exec deploy/pricing-green -c ambassador -- curl -sS --max-time 5 127.0.0.1:8080/version; echo"
 
   lane "LIVE: rollout strategy and history"
   echo "  The defaulted strategy, read back from the live object:"
-  shrun "kubectl -n $NS get deploy pricing -o jsonpath='{.spec.strategy}'; echo"
-  run kubectl -n "$NS" rollout history deploy/pricing
+  shrun "kubectl -n $NS get deploy pricing-blue -o jsonpath='{.spec.strategy}'; echo"
+  run kubectl -n "$NS" rollout history deploy/pricing-blue
 
   lane "EXPORT"
-  snap "05-deploy-pricing" get deploy pricing
+  snap "05-deploy-pricing" get deploy pricing-blue
+  snap "05-deploy-pricing-green" get deploy pricing-green
 
   lane "LIVE (destructive, self-healing): rolling update"
-  if confirm "rolling-restart deploy/pricing?"; then
-    run kubectl -n "$NS" rollout restart deploy/pricing
-    run kubectl -n "$NS" rollout status deploy/pricing --timeout=90s
-    run kubectl -n "$NS" rollout history deploy/pricing
+  if confirm "rolling-restart deploy/pricing-blue?"; then
+    run kubectl -n "$NS" rollout restart deploy/pricing-blue
+    run kubectl -n "$NS" rollout status deploy/pricing-blue --timeout=90s
+    run kubectl -n "$NS" rollout history deploy/pricing-blue
   fi
 
-  lane "LIVE (destructive): blue/green cutover via Service selector patch"
-  if confirm "apply k8s/labs/bluegreen-demo.yaml, flip the Service blue -> green -> blue, then delete the demo objects to restore the original (empty) state?"; then
-    run kubectl apply -f "$REPO_ROOT/k8s/labs/bluegreen-demo.yaml"
-    run kubectl -n "$NS" rollout status deploy/bluegreen-demo-blue --timeout=60s
-    run kubectl -n "$NS" rollout status deploy/bluegreen-demo-green --timeout=60s
-    shrun "kubectl -n $NS get svc bluegreen-demo -o jsonpath='{.spec.selector}'; echo"
-    snap "05-bluegreen-svc-before" get svc bluegreen-demo
-    echo "  curl through the Service (expect BLUE):"
-    run kubectl -n "$NS" run bluegreen-curl-1 --rm -i --restart=Never --image=curlimages/curl \
-      --labels=app.kubernetes.io/name=probe -- curl -sS --max-time 5 http://bluegreen-demo/
+  lane "LIVE (destructive): blue/green cutover on the live pricing Service"
+  if confirm "flip Service pricing blue -> green -> blue (no Deployment is touched)?"; then
+    shrun "kubectl -n $NS get svc pricing -o jsonpath='{.spec.selector}'; echo"
+    snap "05-bluegreen-svc-before" get svc pricing
+    echo "  which colour's Pod is actually behind the Service right now:"
+    shrun "kubectl -n $NS get endpointslices -l kubernetes.io/service-name=pricing -o jsonpath='{range .items[*].endpoints[*]}  {.targetRef.name}{\"\n\"}{end}'"
+    echo "  through the Service, from a Pod the NetworkPolicy allows (expect 0.1.0):"
+    shrun "kubectl -n $NS exec deploy/trip -c ambassador -- curl -sS --max-time 5 http://pricing/version; echo"
+    echo "  ...and end to end through ingress-nginx -> frontend -> pricing:"
+    shrun "curl -sS --max-time 5 http://localhost/api/pricing/version; echo"
+
     echo "  the cutover -- one selector patch, no Pod touched:"
-    run kubectl -n "$NS" patch svc bluegreen-demo -p '{"spec":{"selector":{"color":"green"}}}'
-    snap "05-bluegreen-svc-after" get svc bluegreen-demo
-    echo "  curl through the Service again (expect GREEN):"
-    run kubectl -n "$NS" run bluegreen-curl-2 --rm -i --restart=Never --image=curlimages/curl \
-      --labels=app.kubernetes.io/name=probe -- curl -sS --max-time 5 http://bluegreen-demo/
-    echo "  restoring: flip back to blue, then remove the demo objects:"
-    run kubectl -n "$NS" patch svc bluegreen-demo -p '{"spec":{"selector":{"color":"blue"}}}'
-    run kubectl delete -f "$REPO_ROOT/k8s/labs/bluegreen-demo.yaml"
+    run kubectl -n "$NS" patch svc pricing -p '{"spec":{"selector":{"color":"green"}}}'
+    snap "05-bluegreen-svc-after" get svc pricing
+    sleep 2
+    shrun "kubectl -n $NS get endpointslices -l kubernetes.io/service-name=pricing -o jsonpath='{range .items[*].endpoints[*]}  {.targetRef.name}{\"\n\"}{end}'"
+    echo "  same two requests again -- same Service, same DNS name, new version:"
+    shrun "kubectl -n $NS exec deploy/trip -c ambassador -- curl -sS --max-time 5 http://pricing/version; echo"
+    shrun "curl -sS --max-time 5 http://localhost/api/pricing/version; echo"
+
+    echo "  rollback is the same patch in reverse -- this is why blue/green beats"
+    echo "  a rolling update when you need an instant, complete undo:"
+    run kubectl -n "$NS" patch svc pricing -p '{"spec":{"selector":{"color":"blue"}}}'
+    sleep 2
+    shrun "curl -sS --max-time 5 http://localhost/api/pricing/version; echo"
   fi
 }
 
@@ -416,31 +431,44 @@ step6() {
 step7() {
   banner 7 "NetworkPolicy: allowed vs. denied path" "N4"
 
-  lane "MANIFEST: default-deny with an explicit allow-list"
-  echo "  podSelector picks the four backend APIs; policyTypes lists BOTH"
-  echo "  Ingress and Egress, which is what makes this default-deny:"
-  src "$REPO_ROOT/helm/veloshare/templates/networkpolicy-backend.yaml" 'podSelector:' 10
-  echo "  The ingress allow-list -- ingress-nginx, frontend, and backend peers"
-  echo "  only. Anything else is dropped:"
+  lane "MANIFEST: a real namespace default-deny, plus scoped allow-policies"
+  echo "  podSelector: {} selects EVERY Pod in the namespace, both policyTypes"
+  echo "  are named, and there are NO rules at all -- so the starting position"
+  echo "  for any Pod here, including one applied by hand, is 'no network':"
+  src "$REPO_ROOT/helm/veloshare/templates/networkpolicy-default-deny.yaml" '^spec:' 6
+  echo "  Policies are additive, so each allow-policy is an exception to that"
+  echo "  baseline. The backend one: ingress-nginx, frontend and backend peers"
+  echo "  only, on the ambassador/app ports:"
   src "$REPO_ROOT/helm/veloshare/templates/networkpolicy-backend.yaml" '^  ingress:' 20
+  echo "  DNS has to be namespace-wide -- a Pod that cannot resolve 'rider'"
+  echo "  cannot use the policy that permits reaching it either:"
+  src "$REPO_ROOT/helm/veloshare/templates/networkpolicy-allow-dns.yaml" '^  egress:' 12
 
   lane "LIVE: cluster state"
   run kubectl -n "$NS" get networkpolicy
+  echo "  the default-deny really does carry no rules:"
+  shrun "kubectl -n $NS get netpol default-deny -o jsonpath='{.spec}'; echo"
 
   lane "EXPORT"
-  snap "07-networkpolicy" get networkpolicy backend-isolation
+  snap "07-networkpolicy" get networkpolicy
 
   lane "LIVE: the actual allowed-vs-denied proof"
   echo "  DENIED -- throwaway pod with a non-matching label calling rider."
-  echo "  Expect a timeout: backend-isolation allows only ingress-nginx,"
-  echo "  frontend, and other backend pods."
+  echo "  Expect a timeout: no allow-policy names this Pod, so the default-deny"
+  echo "  is all that applies to it -- in BOTH directions."
   run kubectl -n "$NS" run probe-denied --rm -i --restart=Never --image=curlimages/curl \
     --labels=app.kubernetes.io/name=probe -- curl -sS --max-time 5 http://rider/healthz
   echo "  ALLOWED -- same image, same URL, only the LABEL differs. Expect 200:"
-  echo "  the policy matches on app.kubernetes.io/name=frontend, not on which"
-  echo "  image is actually running."
+  echo "  two policies have to agree for this to work at all -- rider's ingress"
+  echo "  allows from name=frontend, and frontend-isolation allows egress to the"
+  echo "  backends. Both match on the label, not on which image is running."
   run kubectl -n "$NS" run probe-allowed --rm -i --restart=Never --image=curlimages/curl \
     --labels=app.kubernetes.io/name=frontend -- curl -sS --max-time 5 http://rider/healthz
+  echo "  DENIED (egress) -- the same allowed pod cannot reach the internet:"
+  echo "  no policy in this namespace permits 0.0.0.0/0 except the RBAC CronJob's,"
+  echo "  and that one is restricted to the API server's ports."
+  run kubectl -n "$NS" run probe-egress --rm -i --restart=Never --image=curlimages/curl \
+    --labels=app.kubernetes.io/name=frontend -- curl -sS --max-time 5 https://example.com
 }
 
 # ---- step 8: PVC persistence -------------------------------------------------
@@ -510,8 +538,8 @@ step9() {
   echo "  Only pricing is pinned per-environment, and both tags really exist:"
   shrun "docker images --format '  {{.Repository}}:{{.Tag}}' | grep veloshare/pricing || echo '  (run: make images-demo-tag)'"
   echo "  Which image the RUNNING Pod actually has, straight from the container:"
-  shrun "kubectl -n $NS get deploy pricing -o jsonpath='  spec image: {.spec.template.spec.containers[0].image}{\"\n\"}'"
-  run kubectl -n "$NS" exec deploy/pricing -c ambassador -- curl -sS --max-time 5 http://127.0.0.1:8080/version
+  shrun "kubectl -n $NS get deploy pricing-blue -o jsonpath='  spec image: {.spec.template.spec.containers[0].image}{\"\n\"}'"
+  run kubectl -n "$NS" exec deploy/pricing-blue -c ambassador -- curl -sS --max-time 5 http://127.0.0.1:8080/version
 
   lane "LIVE (destructive, restored after): Helm rollback"
   local current_rev prev_rev

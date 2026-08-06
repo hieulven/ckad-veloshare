@@ -1,0 +1,40 @@
+{{- if .Values.global.networkPolicy.enabled }}
+# DNS egress for every Pod in the namespace.
+#
+# This is the one exception that has to be namespace-wide. Under the
+# default-deny, a Pod that cannot reach kube-dns cannot resolve `postgres` or
+# `rider` either, so every other allow-policy in this directory would be
+# unreachable in practice — the connection would fail at name resolution,
+# before the policy that permits it ever applied. Splitting it out into its
+# own file (rather than repeating a DNS rule in all five) keeps that shared
+# dependency visible and in one place.
+#
+# UDP 53 is the normal path; TCP 53 is the fallback for responses too large
+# for a UDP datagram, and omitting it produces intermittent, hard-to-debug
+# resolution failures rather than obvious ones.
+#
+# Scoped to the kube-system namespace, not 0.0.0.0/0: this permits the
+# cluster's own resolver and nothing else, so it cannot be used as a general
+# escape hatch to the internet on port 53.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "veloshare.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+{{- end }}

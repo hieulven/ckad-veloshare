@@ -7,10 +7,14 @@ metadata:
   labels:
     {{- include "veloshare.labels" . | nindent 4 }}
 spec:
+  # Autoscale the color that is actually serving. The idle color stays at its
+  # own fixed replicaCount -- scaling a Deployment that receives no traffic on
+  # a CPU target would do nothing anyway, and pinning the HPA to the active
+  # color keeps `kubectl get hpa` readable during a cutover.
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: {{ include "veloshare.fullname" . }}
+    name: {{ include "veloshare.fullname" . }}{{ if .Values.blueGreen.enabled }}-{{ .Values.blueGreen.activeColor }}{{ end }}
   minReplicas: {{ .Values.autoscaling.minReplicas }}
   maxReplicas: {{ .Values.autoscaling.maxReplicas }}
   metrics:

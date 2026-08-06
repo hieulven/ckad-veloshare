@@ -94,16 +94,20 @@ rolling update instead of a same-spec restart).
 `pricing` already ships this second tag, so these commands run as-is:
 
 ```bash
-make images-demo-tag                      # = TAG=0.2.0 ./scripts/build.sh pricing
+make images                               # builds every service at 0.1.0, plus pricing:0.2.0
 docker images | grep veloshare/pricing    # 0.1.0 and 0.2.0 both present
+# (make images-demo-tag rebuilds only the 0.2.0 tag, if that's all you need)
 ```
 
 **2. Point the Deployment at the new tag and watch the rollout:**
 
 ```bash
-kubectl -n veloshare set image deploy/pricing pricing=veloshare/pricing:0.2.0
-kubectl -n veloshare rollout status deploy/pricing
+kubectl -n veloshare set image deploy/pricing-blue pricing=veloshare/pricing:0.2.0
+kubectl -n veloshare rollout status deploy/pricing-blue
 ```
+
+(`pricing` runs as two Deployments, `pricing-blue` and `pricing-green` — see "Blue/green
+cutover" below. `pricing-blue` is the one serving traffic by default.)
 
 `set image` patches only the named container's `image:` field — this is the actual spec change
 that `rollout restart` never makes. `rollout status` blocks until every new-generation Pod is
@@ -114,16 +118,61 @@ time (`ARG APP_VERSION` in `services/pricing/Dockerfile`) and reports it on `/ve
 cannot be fooled by a stale Pod:
 
 ```bash
-kubectl -n veloshare exec deploy/pricing -c ambassador -- curl -s 127.0.0.1:8080/version
+kubectl -n veloshare exec deploy/pricing-blue -c ambassador -- curl -s 127.0.0.1:8080/version
 # {"service":"pricing","version":"0.2.0"}
 ```
 
 Return to the baseline tag when you're done demonstrating:
 
 ```bash
-kubectl -n veloshare set image deploy/pricing pricing=veloshare/pricing:0.1.0
-kubectl -n veloshare rollout status deploy/pricing
+kubectl -n veloshare set image deploy/pricing-blue pricing=veloshare/pricing:0.1.0
+kubectl -n veloshare rollout status deploy/pricing-blue
 ```
+
+### Blue/green cutover (the no-restart alternative)
+
+Everything above is a **rolling** update: Pods are replaced in place, and for a few seconds both
+versions serve. Blue/green trades that for a switch with no Pod churn at all.
+
+`pricing` runs two Deployments at once — `pricing-blue` (image `0.1.0`) and `pricing-green`
+(image `0.2.0`). Both are labelled `app.kubernetes.io/name: pricing` and differ only by `color`.
+The `pricing` Service selects one color; moving traffic is a patch to that selector, and nothing
+else changes — same Service, same ClusterIP, same DNS name, no Pod replaced:
+
+```bash
+make bluegreen-status     # which color is serving, and what each color is running
+make bluegreen            # blue -> green, printing before/after evidence
+make bluegreen-rollback   # green -> blue
+```
+
+By hand, with the proof:
+
+```bash
+curl -s http://localhost/api/pricing/version
+# {"service":"pricing","version":"0.1.0"}
+
+kubectl -n veloshare patch svc pricing -p '{"spec":{"selector":{"color":"green"}}}'
+
+curl -s http://localhost/api/pricing/version
+# {"service":"pricing","version":"0.2.0"}
+
+# same two Pods, same AGE -- nothing was restarted:
+kubectl -n veloshare get pods -l app.kubernetes.io/name=pricing
+# only the Service's endpoints moved:
+kubectl -n veloshare get endpointslices -l kubernetes.io/service-name=pricing
+```
+
+Rolling back is the same patch in reverse, and it is instant — the old version never stopped
+running. That is the property you are buying with the extra idle Pod.
+
+**A `kubectl patch` cutover is live-only.** The next `make deploy` resets the selector to
+`values.yaml`. To make green the persistent default:
+
+```bash
+helm upgrade veloshare ./helm/veloshare -n veloshare --set pricing.blueGreen.activeColor=green
+```
+
+The `pricing` HPA follows `activeColor`, so it autoscales whichever color is serving.
 
 **3. Roll back if the new version is bad:**
 
@@ -158,9 +207,13 @@ helm -n veloshare history veloshare
 scaling one service:
 
 ```bash
-helm upgrade veloshare ./helm/veloshare -n veloshare --set pricing.replicaCount=3
-kubectl -n veloshare get deploy pricing
+helm upgrade veloshare ./helm/veloshare -n veloshare --set pricing.blueGreen.blue.replicaCount=3
+kubectl -n veloshare get deploy pricing-blue
 ```
+
+(`pricing.replicaCount` only applies when `pricing.blueGreen.enabled=false`; with blue/green on,
+each color has its own `blueGreen.<color>.replicaCount`. For any other service it's the plain
+`<service>.replicaCount`.)
 
 **Roll the whole release back** to a previous revision (reverts every templated resource the
 chart owns, not just one Deployment's image):

@@ -1,11 +1,12 @@
 # Raises the namespace quota to fit the prod overlay's doubled API replicas.
 #
-# Dev footprint is ~315m CPU / 992Mi requested across 7 Pods. Prod adds one more
-# replica each for rider/station/trip/pricing/frontend -- and every app Pod is
-# 3 containers (app + ambassador + log-agent), so that is 5 Pods / 15 containers
-# more, not 5 containers. The headroom below is deliberately generous so a
-# rolling update (which briefly runs maxSurge extra Pods) does not wedge against
-# the quota mid-rollout.
+# Dev footprint is 360m CPU / 1168Mi requested across 8 Pods (the 8th being
+# pricing-green -- blue/green keeps both colors running at all times). Prod adds
+# one more replica each for rider/station/trip/frontend and for BOTH pricing
+# colors -- and every app Pod is 3 containers (app + ambassador + log-agent), so
+# that is 6 Pods / 18 containers more, not 6 containers. The headroom below is
+# deliberately generous so a rolling update (which briefly runs maxSurge extra
+# Pods) does not wedge against the quota mid-rollout.
 apiVersion: v1
 kind: ResourceQuota
 metadata:

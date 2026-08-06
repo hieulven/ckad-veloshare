@@ -7,4 +7,11 @@ namespace: veloshare
 resources:
   - ingress-veloshare-api.yaml
   - ingress-veloshare.yaml
+  - networkpolicy-allow-dns-egress.yaml
   - networkpolicy-backend-isolation.yaml
+  - networkpolicy-default-deny.yaml
+  - networkpolicy-fleet-monitor-egress.yaml
+  - networkpolicy-frontend-isolation.yaml
+  - networkpolicy-pod-lister-api-egress.yaml
+  - networkpolicy-postgres-isolation.yaml
+  - networkpolicy-redis-isolation.yaml

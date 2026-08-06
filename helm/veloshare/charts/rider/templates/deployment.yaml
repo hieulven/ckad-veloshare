@@ -63,6 +63,9 @@ spec:
               mountPath: /var/log/veloshare
             - name: tmp
               mountPath: /tmp
+          {{- if .Values.startupProbe.enabled }}
+          {{- include "veloshare.startupProbe" (dict "path" .Values.probePath "port" .Values.containerPort "periodSeconds" .Values.startupProbe.periodSeconds "failureThreshold" .Values.startupProbe.failureThreshold) | nindent 10 }}
+          {{- end }}
           livenessProbe:
             httpGet:
               path: {{ .Values.probePath }}

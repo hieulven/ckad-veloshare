@@ -1,12 +1,23 @@
 {{- if .Values.global.networkPolicy.enabled }}
-# CKAD learning demo of NetworkPolicy isolation for the backend API services
+# NetworkPolicy isolation for the backend API services
 # (rider/station/trip/pricing).
+#
+# One of six allow-policies layered on the namespace default-deny in
+# networkpolicy-default-deny.yaml — read that file first for how the set fits
+# together. This one used to be the ONLY policy in the namespace, which meant
+# it isolated the backends while frontend, postgres, redis and the CronJob
+# Pods were selected by nothing and could reach anything; that is what the
+# default-deny closed.
 #
 # CORRECTION: this WAS assumed to be inert on kindnet (kind's default CNI),
 # but that turned out to be wrong — this policy caused a real 504 from
 # `curl http://localhost/api/healthz`, confirmed by deleting it live and
 # watching the request succeed. kindnet on this cluster does enforce
 # NetworkPolicy. Treat it as fully live.
+#
+# Both pricing colors match this policy: its podSelector keys on
+# app.kubernetes.io/name: pricing, which pricing-blue and pricing-green share,
+# so a blue/green cutover never has to touch the network layer.
 #
 # Ingress: only the ingress-nginx controller, the frontend, and other backend
 # pods may reach a backend pod. "Frontend only" would otherwise also block

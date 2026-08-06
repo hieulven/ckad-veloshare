@@ -71,32 +71,43 @@ global:
   # ANY SINGLE container may request/limit and fills in defaults for a
   # container that specifies none.
   #
-  # Sized around the 7 core app Pods (rider/station/trip/pricing/frontend/
-  # postgres/redis + their ambassador and log-agent sidecars), which is what
-  # global.logging.enabled=false renders. Measured from the actual render:
-  # 320m CPU / 992Mi requested, 1650m CPU / 2112Mi limited — so the quota
-  # below leaves real headroom for `make deploy` rolling updates.
+  # Sized around the 8 core app Pods (rider/station/trip/frontend/postgres/
+  # redis + BOTH pricing colors, each with its ambassador and log-agent
+  # sidecars), which is what global.logging.enabled=false renders. Measured
+  # from the actual render: 360m CPU / 1168Mi requested, 1900m CPU / 2464Mi
+  # limited. Blue/green is what moved these numbers — pricing-green is a
+  # second full app Pod (45m/176Mi requested) that exists at all times so the
+  # Service selector can be flipped onto a warm target instantly, which is the
+  # entire point of blue/green over a rolling update.
+  #
+  # The headroom on top of that measurement covers, in order of size:
+  #   - a rolling update surging one extra API Pod (+45m / +176Mi requested)
+  #   - the two CronJob Pods (fleet-monitor, pod-lister) when they overlap
+  # It does NOT cover the pricing HPA scaling blue to its maxReplicas of 5 —
+  # quota beats HPA, and a scale-out that hits the cap stops there with a
+  # FailedCreate event rather than being scheduled. That is correct behavior
+  # and worth demonstrating, not a sizing bug.
   #
   # Enabling global.logging adds elasticsearch + kibana (~350m/400Mi more
   # requested, ~1500m/640Mi more limited), which pushes every one of the four
   # dimensions below over the cap and gets those Pods REJECTED. To run the
   # EFK stack, raise this quota at the same time, e.g.:
   #   helm upgrade ... --set global.logging.enabled=true \
-  #     --set global.resourceQuota.requests.cpu=1 \
-  #     --set global.resourceQuota.requests.memory=1600Mi \
-  #     --set global.resourceQuota.limits.cpu=4 \
-  #     --set global.resourceQuota.limits.memory=3Gi
+  #     --set global.resourceQuota.requests.cpu=1200m \
+  #     --set global.resourceQuota.requests.memory=2Gi \
+  #     --set global.resourceQuota.limits.cpu=5 \
+  #     --set global.resourceQuota.limits.memory=4Gi
   # Leaving logging off and shrinking this quota is also the easiest way to
   # demonstrate ResourceQuota rejection live — see docs/ckad-checklist.md (C5).
   resourceQuota:
     enabled: true
     requests:
-      cpu: 500m
-      memory: 1200Mi
+      cpu: 600m
+      memory: 1600Mi
     limits:
-      cpu: "2"
-      memory: 2560Mi
-    pods: "15"
+      cpu: "3"
+      memory: 3Gi
+    pods: "20"
 
   limitRange:
     enabled: true

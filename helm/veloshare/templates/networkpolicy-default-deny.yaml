@@ -1,0 +1,51 @@
+{{- if .Values.global.networkPolicy.enabled }}
+# Namespace-wide default-deny (CKAD N4) — the baseline every other policy in
+# this directory is an exception to.
+#
+# `podSelector: {}` selects EVERY Pod in the namespace, and naming both
+# policyTypes with no `ingress:`/`egress:` rules means "no traffic is allowed
+# in either direction by this policy". NetworkPolicies are purely additive:
+# once any policy selects a Pod for a direction, only traffic explicitly
+# permitted by SOME policy gets through. So this file does not itself block
+# anything a companion policy allows — it removes the implicit
+# allow-everything that applies to a Pod no policy has selected.
+#
+# That last part is why this file exists at all. Before it, the only policy
+# was backend-isolation, which selects rider/station/trip/pricing; frontend,
+# postgres, redis and the two CronJob Pods were selected by nothing and could
+# therefore talk to anything, including out to the internet. Now the starting
+# position for a new Pod in this namespace — including one someone applies by
+# hand — is "no network", and it stays that way until a policy names it.
+#
+# Companion allow-policies, all in this directory:
+#   networkpolicy-allow-dns.yaml   every Pod -> kube-dns (needed by all others)
+#   networkpolicy-backend.yaml     rider/station/trip/pricing
+#   networkpolicy-frontend.yaml    frontend
+#   networkpolicy-datastores.yaml  postgres, redis
+#   networkpolicy-jobs.yaml        fleet-monitor, pod-lister
+#   networkpolicy-logging.yaml     elasticsearch, kibana (logging.enabled only)
+#
+# Prove it bites, with a Pod that no allow-policy names:
+#   kubectl -n {{ .Values.global.namespace }} run probe --rm -it --restart=Never \
+#     --image=curlimages/curl --labels=app.kubernetes.io/name=probe \
+#     -- curl -sS --max-time 5 http://rider/healthz
+# That hangs and fails. The same curl from inside the frontend Pod succeeds.
+#
+# NOTE: the standalone labs under k8s/labs/ apply Pods straight into this
+# namespace and are covered by this policy too — a curl Pod from
+# bluegreen-demo.yaml can no longer reach its Service. Run those with
+# `--set global.networkPolicy.enabled=false`, or use the lab namespace
+# (`make lab`, namespace veloshare-lab, which this chart does not touch).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "veloshare.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+{{- end }}

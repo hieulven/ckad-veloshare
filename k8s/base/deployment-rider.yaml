@@ -115,6 +115,13 @@ spec:
           mountPath: /var/log/veloshare
         - name: tmp
           mountPath: /tmp
+        startupProbe:
+          httpGet:
+            path: /healthz
+            port: 8000
+          periodSeconds: 2
+          timeoutSeconds: 2
+          failureThreshold: 30
         livenessProbe:
           httpGet:
             path: /healthz

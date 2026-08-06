@@ -43,6 +43,22 @@ spec:
               mountPath: /var/run/postgresql
             - name: tmp
               mountPath: /tmp
+          {{- if .Values.startupProbe.enabled }}
+          # Startup probe (CKAD O3). Postgres is the slowest starter in the
+          # platform: on the very first boot the entrypoint runs initdb and
+          # then every script in /docker-entrypoint-initdb.d (our init.sql,
+          # which creates the three per-service roles and schemas) BEFORE it
+          # starts accepting connections. That is minutes-capable on a cold
+          # laptop kind cluster, and a liveness probe with a 30s failure
+          # window would restart the Pod mid-initdb -- repeatedly, and with a
+          # half-initialised PGDATA on the PVC each time.
+          startupProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "veloshare"]
+            periodSeconds: {{ .Values.startupProbe.periodSeconds }}
+            timeoutSeconds: 3
+            failureThreshold: {{ .Values.startupProbe.failureThreshold }}
+          {{- end }}
           readinessProbe:
             exec:
               command: ["pg_isready", "-U", "postgres", "-d", "veloshare"]

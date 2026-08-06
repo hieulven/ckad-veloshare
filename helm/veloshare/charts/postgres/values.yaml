@@ -15,6 +15,15 @@ containerPort: 5432
 
 storage: 1Gi
 
+# Startup probe (CKAD O3). Postgres gets a much bigger budget than the Python
+# services: 3s x 40 = 120s, because first boot does initdb plus the whole of
+# configmap-init.sql (three roles, three schemas) before the socket opens.
+# Subsequent boots pass on the first or second check.
+startupProbe:
+  enabled: true
+  periodSeconds: 3
+  failureThreshold: 40
+
 resources:
   requests:
     cpu: 100m

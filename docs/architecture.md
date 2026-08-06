@@ -247,15 +247,40 @@ ingress-nginx evaluates a regex/exact path with higher precedence than the plain
 
 ## East-west traffic (NetworkPolicy)
 
-`backend-isolation` (`helm/veloshare/templates/networkpolicy-backend.yaml`, gated by
-`global.networkPolicy.enabled`) restricts who may reach `rider`/`station`/`trip`/`pricing`:
+The namespace runs a **true default-deny** with scoped exceptions on top — 8 NetworkPolicy
+objects by default, 10 with logging on, all gated by `global.networkPolicy.enabled`.
 
-- **Ingress allowed from:** the ingress-nginx controller's namespace (needed for
-  `/api/healthz`), the `frontend` Pod, and the other three backend Pods (needed for `trip`'s
-  direct calls to `rider` and `pricing`) — on ports `8080` (ambassador) and `8000` (app).
-- **Egress allowed to:** kube-dns, Postgres, Redis, the other backend Pods, and (only when
-  `global.logging.enabled=true`) Elasticsearch. Everything else — including the open internet —
-  is denied by NetworkPolicy's default-deny-once-selected behavior.
+`default-deny` (`networkpolicy-default-deny.yaml`) selects **every** Pod (`podSelector: {}`),
+names both `policyTypes`, and carries no rules at all. Since NetworkPolicies are additive, it
+does not block anything a companion policy allows — it removes the implicit allow-everything
+that would otherwise apply to any Pod no policy has selected. Before it existed, only the
+backends were isolated; `frontend`, `postgres`, `redis` and the two CronJob Pods could reach
+anything, including the open internet.
+
+The exceptions, each in its own file:
+
+| Policy | Selects | Allows |
+|---|---|---|
+| `allow-dns-egress` | every Pod | egress to kube-dns (`kube-system:53`, UDP+TCP) |
+| `backend-isolation` | `rider`/`station`/`trip`/`pricing` (both colors) | in: ingress-nginx ns, `frontend`, other backends (8080/8000). out: Postgres, Redis, other backends, Elasticsearch (logging on) |
+| `frontend-isolation` | `frontend` | in: ingress-nginx ns only. out: exactly the four upstreams in `nginx.conf` |
+| `postgres-isolation` | `postgres` | in: the four backends + `fleet-monitor`, on 5432 |
+| `redis-isolation` | `redis` | in: the four backends, on 6379 |
+| `fleet-monitor-egress` | `fleet-monitor` | out: Postgres only |
+| `pod-lister-api-egress` | the RBAC-demo CronJob | out: `0.0.0.0/0` on 443/6443 only |
+| `elasticsearch-isolation`, `kibana-isolation` | logging Pods | log-agents + Kibana → ES:9200; ingress-nginx → Kibana:5601 |
+
+DNS is the one exception that must be namespace-wide: a Pod that cannot resolve `postgres` or
+`rider` cannot use the policy that permits reaching them either — the connection fails at name
+resolution first. Splitting it into its own file keeps that shared dependency in one place
+rather than repeated in five.
+
+`pod-lister-api-egress` is the one policy that needs an `ipBlock`, and it is worth understanding
+why: the Pod dials the `kubernetes.default.svc` ClusterIP, but kube-proxy DNATs that to the API
+server's real endpoint — the control-plane **node's** IP on 6443 — and NetworkPolicy is evaluated
+against the post-DNAT destination. No `podSelector` or `namespaceSelector` can ever match a node.
+The node IP is not knowable at template time, so the honest trade is `0.0.0.0/0` narrowed to the
+two API-server ports; every other port stays denied by the default-deny.
 
 This is enforced on this cluster: kindnet (kind's default CNI) does implement NetworkPolicy here,
 confirmed by a real 504 from `/api/healthz` when the policy was briefly (and mistakenly) assumed

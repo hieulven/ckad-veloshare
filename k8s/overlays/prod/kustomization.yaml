@@ -22,20 +22,23 @@ resources:
 commonAnnotations:
   veloshare.io/environment: prod
 
-# Prod pins pricing to 0.2.0 while dev stays on 0.1.0 -- the per-environment
-# image pinning that P5 asks for, on a real service rather than a placeholder.
-# Both tags are genuinely built from services/pricing and loaded into the kind
-# cluster by `make images-demo-tag`; the running Pod reports which one it got:
+# Prod pins the ACTIVE pricing color (blue) to 0.2.0 while dev keeps it on
+# 0.1.0 -- the per-environment image pinning that P5 asks for, on a real
+# service rather than a placeholder. Both tags are genuinely built from
+# services/pricing and loaded into the kind cluster by `make images`; the
+# running Pod reports which one it got:
 #
-#   kubectl -n veloshare exec deploy/pricing -c ambassador -- \
+#   kubectl -n veloshare exec deploy/pricing-blue -c ambassador -- \
 #       curl -s 127.0.0.1:8080/version   ->  {"service":"pricing","version":"0.2.0"}
 #
 # The version string is baked in at build time from the image tag
 # (services/pricing/Dockerfile ARG APP_VERSION), so a Pod cannot misreport which
 # image it is running.
-images:
-  - name: veloshare/pricing
-    newTag: "0.2.0"
+#
+# Per-Deployment patch rather than a top-level `images:` transformer -- see the
+# longer explanation in ../dev/kustomization.yaml. In prod the effect is that
+# blue is promoted to the same build green has been holding, which is what the
+# end of a successful cutover actually looks like.
 
 replicas:
   - name: rider
@@ -44,10 +47,19 @@ replicas:
     count: 2
   - name: trip
     count: 2
-  - name: pricing
+  - name: pricing-blue
+    count: 2
+  - name: pricing-green
     count: 2
   - name: frontend
     count: 2
 
 patches:
   - path: resourcequota-patch.yaml
+  - target:
+      kind: Deployment
+      name: pricing-blue
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: veloshare/pricing:0.2.0

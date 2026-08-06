@@ -16,8 +16,9 @@ live in [`README.md`](./README.md); operator/user reference (English) is in
 make up                # full bring-up: cluster -> ingress -> secrets -> images -> load -> deploy
 make env-init           # create env/*.env from templates (once, local only, gitignored)
 make secrets            # apply env/*.env to the cluster as per-pod Secrets (refuses on leftover change-me)
-make images             # docker build every service image veloshare/<svc>:0.1.0
-make images-demo-tag    # build+load pricing at DEMO_TAG (0.2.0) so k8s/overlays/prod pins a real second tag
+make images             # docker build every service image veloshare/<svc>:0.1.0, plus pricing:0.2.0
+                          # (needed by pricing-green and by k8s/overlays/prod)
+make images-demo-tag    # build+load ONLY the second pricing tag (DEMO_TAG, 0.2.0)
 make load               # kind load docker-image for every service into cluster `veloshare`
 make lint               # helm lint ./helm/veloshare
 make template           # helm template (dry-run render, no cluster needed)
@@ -34,7 +35,10 @@ make lab                # lab/run-lab.sh — instructor's Day 3-5 CKAD labs, ste
                           # (make lab LAB=4.3 or LAB=day4 for one lab/day; lab-auto, lab-list,
                           # lab-clean). Runs in namespace `veloshare-lab`, never `veloshare`.
 make evidence           # AUTO=1 scripts/demo.sh — read-only pass, refreshes docs/evidence/*.yaml
-make bluegreen-demo     # apply k8s/labs/bluegreen-demo.yaml (standalone lab, not part of the chart)
+make bluegreen-status   # which pricing color the Service points at, both colors' images/versions
+make bluegreen          # cut pricing over blue -> green by patching the Service selector (real service)
+make bluegreen-rollback # flip it back green -> blue
+make bluegreen-demo     # apply k8s/labs/bluegreen-demo.yaml (standalone nginx lab, not part of the chart)
 make uninstall          # helm uninstall veloshare -n veloshare  (ask before running)
 make cluster-down       # kind delete cluster --name veloshare   (ask before running)
 ```
@@ -51,6 +55,10 @@ docker build -t veloshare/<service>:0.1.0 ./services/<service>
 kind load docker-image veloshare/<service>:0.1.0 --name veloshare
 kubectl -n veloshare rollout restart deploy/<service>
 ```
+
+For `pricing` the Deployment is `pricing-blue` (and `pricing-green`, which runs the `0.2.0`
+build) — see Blue/green below. Rebuilding `pricing` at `0.1.0` and restarting `pricing-blue`
+is the equivalent step.
 
 **Diagnostics:**
 
@@ -178,8 +186,37 @@ All naming/labelling goes through `_helpers.tpl` (`veloshare.fullname`,
 App containers listen on **8000**; the `ambassador` nginx sidecar listens on **8080** and
 proxies to `127.0.0.1:8000`, and it is 8080 that the ClusterIP Service's `targetPort`
 points at. Services expose port **80**. Every long-running workload has liveness +
-readiness probes; elasticsearch and kibana additionally have a `startupProbe` because
-both are slow-starting JVM/Node apps.
+readiness probes. `rider`, `station`, `trip`, `pricing` and `postgres` additionally have a
+`startupProbe` (`veloshare.startupProbe` in `_helpers.tpl`, per-chart `startupProbe` values)
+so a slow first boot — uvicorn import plus asyncpg pool creation, or Postgres running
+`initdb` + `init.sql` — is never mistaken for a hang and restarted by liveness. Elasticsearch
+and kibana have their own for the same reason (slow-starting JVM/Node apps). `frontend` and
+`redis` deliberately have none: nginx and redis-server are listening in well under a second,
+and a startup probe there would be ceremony, not protection.
+
+### Blue/green
+
+`pricing` runs as **two Deployments**, `pricing-blue` and `pricing-green`, rendered from one
+template body (`charts/pricing/templates/deployment.yaml` ranges over the colors). Both carry
+`app.kubernetes.io/name: pricing` — so the NetworkPolicy, the API Ingress and in-cluster DNS
+match either — and differ only by a `color` label, which is also in each one's
+`selector.matchLabels` so the two ReplicaSets never adopt each other's Pods.
+
+The ClusterIP Service `pricing` selects `color: <activeColor>`. **Cutting traffic over is a
+one-line patch to that selector** and nothing else moves — same Service name, same ClusterIP,
+same DNS, no Deployment touched:
+
+```sh
+make bluegreen            # blue -> green, with before/after evidence
+make bluegreen-rollback   # green -> blue
+make bluegreen-status     # who's serving right now
+```
+
+The two colors run genuinely different images (blue `0.1.0`, green `0.2.0`, both built by
+`make images` from the same source with `APP_VERSION` baked in), so `GET /version` proves
+which one answered rather than asserting it. A `kubectl patch` cutover is **live-only** — the
+next `make deploy` resets it to `values.yaml`; persist it with
+`--set pricing.blueGreen.activeColor=green`. The HPA follows `activeColor`.
 
 ### Cluster layout
 
@@ -201,15 +238,28 @@ so it matches any `Host` header — `http://localhost/` works with no `/etc/host
   services — generated from the Helm chart by `scripts/gen-k8s.sh` (`make gen-k8s`) — and
   are an alternative deploy path to Helm, never applied alongside it: `scripts/deploy.sh`
   refuses to run one path while the other owns the namespace (`FORCE=1` to override). The
-  overlays now also pin a real per-environment image tag: `dev` pins `veloshare/pricing:0.1.0`,
-  `prod` pins `:0.2.0` — both genuinely built and loaded via `make images-demo-tag`, so a
-  running Pod's reported version (`GET /version`) proves which image it's actually running.
-  The other six services stay unpinned (one tag, `0.1.0`, ever exists in the kind cluster;
-  pinning an untagged/never-loaded tag would render an unpullable manifest). `k8s/labs/kustomize-demo/`
+  overlays now also pin a real per-environment image tag on the **active** pricing color:
+  `dev` pins `pricing-blue` to `veloshare/pricing:0.1.0`, `prod` pins it to `:0.2.0` — both
+  genuinely built and loaded via `make images`, so a running Pod's reported version
+  (`GET /version`) proves which image it's actually running. That's a per-Deployment JSON
+  patch rather than a top-level `images:` transformer on purpose: `images:` matches by image
+  *name* and would rewrite both colors, dragging `pricing-green` backwards to `0.1.0` in dev
+  and erasing the version difference blue/green exists to demonstrate. The other six services
+  stay unpinned (one tag, `0.1.0`, ever exists in the kind cluster; pinning an
+  untagged/never-loaded tag would render an unpullable manifest). `k8s/labs/kustomize-demo/`
   is a separate, minimal **standalone teaching lab** against a public nginx image, kept apart
   so it never competes for ownership with either deploy path. Same reasoning covers
   `k8s/labs/bluegreen-demo.yaml`, `k8s/labs/pvc-demo.yaml`, and `k8s/labs/probes-demo.yaml`:
   standalone labs applied by hand (or via `make bluegreen-demo`), not chart or overlay members.
+- `k8s/labs/bluegreen-demo.yaml` is now **redundant with the real thing** (`make bluegreen`)
+  and is kept only as a throwaway-nginx version of the same pattern for hands-on practice.
+  Its `kubectl run` curl Pod is blocked by the namespace default-deny NetworkPolicy — run it
+  with `--set global.networkPolicy.enabled=false` or read the color off the Service.
+- The **namespace default-deny NetworkPolicy** (`networkpolicy-default-deny.yaml`) selects
+  every Pod in `veloshare`, including anything applied by hand. Six allow-policies sit on
+  top of it (DNS, backends, frontend, datastores, jobs, logging). Anything new that needs
+  the network needs a rule — that's the point, not an oversight. Toggle the whole set with
+  `global.networkPolicy.enabled`.
 - The `pricing` Deployment has an optional `initCheck`-gated init container that waits
   for `rider` (TCP) and Postgres (`pg_isready`) before starting — even though `pricing`
   is stateless and calls neither. It exists purely to demonstrate the

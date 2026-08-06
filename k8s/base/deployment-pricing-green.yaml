@@ -1,23 +1,26 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: pricing
+  name: pricing-green
   namespace: veloshare
   labels:
     app.kubernetes.io/name: pricing
     app.kubernetes.io/instance: veloshare
     app.kubernetes.io/part-of: veloshare
+    color: green
 spec:
   replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: pricing
       app.kubernetes.io/instance: veloshare
+      color: green
   template:
     metadata:
       labels:
         app.kubernetes.io/name: pricing
         app.kubernetes.io/instance: veloshare
+        color: green
     spec:
       securityContext:
         runAsNonRoot: true
@@ -95,7 +98,7 @@ spec:
           mountPath: /tmp
       containers:
       - name: pricing
-        image: veloshare/pricing:0.1.0
+        image: veloshare/pricing:0.2.0
         imagePullPolicy: IfNotPresent
         securityContext:
           allowPrivilegeEscalation: false
@@ -120,6 +123,13 @@ spec:
           mountPath: /var/log/veloshare
         - name: tmp
           mountPath: /tmp
+        startupProbe:
+          httpGet:
+            path: /healthz
+            port: 8000
+          periodSeconds: 2
+          timeoutSeconds: 2
+          failureThreshold: 30
         livenessProbe:
           httpGet:
             path: /healthz

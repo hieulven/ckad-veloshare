@@ -1,0 +1,40 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend-isolation
+  namespace: veloshare
+  labels:
+    app.kubernetes.io/name: veloshare
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/part-of: veloshare
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: frontend
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8080
+  egress:
+  - to:
+    - podSelector:
+        matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: In
+          values:
+          - rider
+          - station
+          - trip
+          - pricing
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 8000

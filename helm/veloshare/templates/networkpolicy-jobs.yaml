@@ -1,0 +1,73 @@
+{{- if .Values.global.networkPolicy.enabled }}
+# fleet-monitor — the daily report CronJob. Egress to Postgres and nothing
+# else. It runs psql against the postgres admin role to aggregate across the
+# three service schemas, writes the report to its PVC, and exits; it has no
+# reason to reach any API or the internet, and now it cannot.
+#
+# No ingress rules: nothing connects to a CronJob Pod.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fleet-monitor-egress
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "veloshare.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: fleet-monitor
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+{{- if .Values.global.rbacDemo.enabled }}
+---
+# pod-lister — the RBAC demo CronJob. Egress to the Kubernetes API server only.
+#
+# This one needs an ipBlock rather than a podSelector, and the reason is worth
+# knowing for the exam: the Pod dials the `kubernetes.default.svc` ClusterIP
+# (10.96.0.1:443), but kube-proxy DNATs that to the API server's real endpoint
+# — the control-plane node's IP on port 6443 — and NetworkPolicy is evaluated
+# against the post-DNAT destination. That destination is a node, not a Pod, so
+# no podSelector or namespaceSelector can ever match it. Selecting the
+# kube-system namespace does not work either; the API server is not a Pod in
+# it as far as the dataplane is concerned.
+#
+# 0.0.0.0/0 restricted to the two API-server ports is the honest trade: the
+# node IP is not knowable at template time (it differs per kind cluster and
+# changes when the cluster is recreated), so pinning an exact CIDR here would
+# be a manifest that breaks on someone else's machine. Ports 443 and 6443
+# together cover the in-cluster Service port and the real endpoint port.
+# Egress to any other port — including 80 and 53-to-the-internet — is still
+# denied by the namespace default-deny.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pod-lister-api-egress
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "veloshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rbac-demo
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: rbac-demo
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
+{{- end }}
+{{- end }}

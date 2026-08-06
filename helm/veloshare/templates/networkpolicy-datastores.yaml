@@ -1,0 +1,81 @@
+{{- if .Values.global.networkPolicy.enabled }}
+# postgres — ingress only, from the Pods that actually hold a DB role.
+#
+# This is the policy that turns "one schema and one DB role per service" from
+# an application convention into something the network also enforces: a Pod
+# that is not one of the four backends or the reporting CronJob cannot open a
+# connection to 5432 at all, whatever credentials it might have.
+#
+# fleet-monitor is in the list because it is the one deliberate cross-schema
+# reader — it authenticates as the postgres admin role to aggregate the daily
+# report across riders/stations/trips (see CLAUDE.md, "Data layer").
+#
+# The backends' migrate init containers use this same path (they run in the
+# app Pod, so they match the same podSelector).
+#
+# No egress rules: postgres initiates nothing outbound except DNS, which
+# networkpolicy-allow-dns.yaml already covers namespace-wide.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-isolation
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "veloshare.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - rider
+                  - station
+                  - trip
+                  - pricing
+                  - fleet-monitor
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# redis — ingress only, from the backends.
+#
+# In practice only `trip` connects (the trip:active:{rider_id} key and the
+# trip.completed stream); the selector is the whole backend set because
+# pricing's wait-for-deps init container and any future cache use would come
+# from the same Pod shape, and narrowing it to trip alone would encode a
+# detail of today's code into the network layer.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-isolation
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "veloshare.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - rider
+                  - station
+                  - trip
+                  - pricing
+      ports:
+        - protocol: TCP
+          port: 6379
+{{- end }}

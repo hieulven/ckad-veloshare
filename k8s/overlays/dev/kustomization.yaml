@@ -21,22 +21,38 @@ replicas:
     count: 1
   - name: trip
     count: 1
-  - name: pricing
+  - name: pricing-blue
+    count: 1
+  - name: pricing-green
     count: 1
   - name: frontend
     count: 1
 
-# Dev tracks the current release line of pricing: 0.1.0. The prod overlay pins
-# 0.2.0 instead, and both tags are really built and loaded into the cluster
-# (`make images-demo-tag`), so this is a live difference you can prove:
+# Dev runs the current release line, 0.1.0, on the ACTIVE pricing color. The
+# prod overlay pins 0.2.0 on the same Deployment instead, and both tags are
+# really built and loaded into the cluster (`make images`), so this is a live
+# difference you can prove:
 #
-#   kubectl -n veloshare get deploy pricing -o jsonpath='{..image}'
-#   kubectl -n veloshare exec deploy/pricing -c ambassador -- \
+#   kubectl -n veloshare get deploy pricing-blue -o jsonpath='{..image}'
+#   kubectl -n veloshare exec deploy/pricing-blue -c ambassador -- \
 #       curl -s 127.0.0.1:8080/version
+#
+# This is a targeted patch rather than a top-level `images:` transformer on
+# purpose. `images:` matches by image NAME, so it would rewrite pricing-blue
+# and pricing-green alike -- and in dev that would drag green backwards from
+# its 0.2.0 candidate build to 0.1.0, erasing the version difference the
+# blue/green cutover exists to demonstrate. Pinning per Deployment keeps the
+# two lessons independent: the overlay decides what the active color serves,
+# blue/green decides which color is active.
 #
 # The other six services are not pinned here -- they exist at exactly one tag
 # (0.1.0) in the kind cluster, and pinning a tag that was never loaded would
 # render a manifest that cannot pull.
-images:
-  - name: veloshare/pricing
-    newTag: "0.1.0"
+patches:
+  - target:
+      kind: Deployment
+      name: pricing-blue
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: veloshare/pricing:0.1.0

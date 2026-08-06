@@ -9,10 +9,13 @@ CHART     ?= ./helm/veloshare
 REGISTRY  ?= veloshare
 TAG       ?= 0.1.0
 
-# Second tag of ONE service (pricing), built from the same source, so the
-# Kustomize overlays can pin genuinely different images per environment:
-# k8s/overlays/dev pins $(TAG), k8s/overlays/prod pins $(DEMO_TAG). Built by
-# `make images-demo-tag`; not part of `make images` / `make up`.
+# Second tag of ONE service (pricing), built from the same source with a
+# different APP_VERSION baked in. Two things depend on it existing, which is
+# why `images` and `load` below now cover it and `make up` gets it for free:
+#   - blue/green: pricing-green runs $(DEMO_TAG) while pricing-blue runs
+#     $(TAG), so flipping the Service selector visibly changes GET /version
+#   - k8s/overlays/prod pins $(DEMO_TAG) where overlays/dev pins $(TAG)
+# `make images-demo-tag` still exists to rebuild just this tag on its own.
 DEMO_TAG  ?= 0.2.0
 
 SERVICES  := pricing rider station trip fleet-monitor frontend pod-lister
@@ -24,7 +27,8 @@ ENV_DIR   ?= env
 ENV_FILES := postgres rider station trip auth
 
 .PHONY: help cluster-up cluster-down lint template deploy gen-k8s deploy-kubectl uninstall images images-demo-tag load ingress up env-init secrets seed \
-	metrics-server history rollback bluegreen-demo bluegreen-clean demo evidence smoke-test \
+	metrics-server history rollback bluegreen bluegreen-rollback bluegreen-status \
+	bluegreen-demo bluegreen-clean demo evidence smoke-test \
 	lab lab-auto lab-list lab-clean
 
 help: ## Show available targets
@@ -65,22 +69,25 @@ rollback: ## Roll back the Helm release to revision REV (make rollback REV=2)
 	fi
 	helm -n $(NAMESPACE) rollback $(RELEASE) $(REV)
 
-images: ## Build all app images
+images: ## Build all app images (plus pricing at DEMO_TAG, which blue/green and overlays/prod need)
 	@for svc in $(SERVICES); do \
 		docker build -t $(REGISTRY)/$$svc:$(TAG) ./services/$$svc; \
 	done
+	docker build --build-arg APP_VERSION=$(DEMO_TAG) -t $(REGISTRY)/pricing:$(DEMO_TAG) ./services/pricing
 
-images-demo-tag: ## Build+load a second pricing tag (DEMO_TAG, default 0.2.0) so k8s/overlays/prod pins a different image
+images-demo-tag: ## Build+load ONLY the second pricing tag (DEMO_TAG, default 0.2.0)
 	@TAG=$(DEMO_TAG) ./scripts/build.sh pricing
 	@echo ""
-	@echo "pricing now exists at two tags in cluster '$(CLUSTER)': $(TAG) (dev overlay) and $(DEMO_TAG) (prod overlay)."
+	@echo "pricing now exists at two tags in cluster '$(CLUSTER)': $(TAG) (blue / dev overlay) and $(DEMO_TAG) (green / prod overlay)."
 	@echo "Prove which one a Pod is running:"
-	@echo "  kubectl -n $(NAMESPACE) exec deploy/pricing -c ambassador -- curl -s 127.0.0.1:8080/version"
+	@echo "  kubectl -n $(NAMESPACE) exec deploy/pricing-blue  -c ambassador -- curl -s 127.0.0.1:8080/version"
+	@echo "  kubectl -n $(NAMESPACE) exec deploy/pricing-green -c ambassador -- curl -s 127.0.0.1:8080/version"
 
 load: ## Load all app images into the kind cluster
 	@for svc in $(SERVICES); do \
 		kind load docker-image $(REGISTRY)/$$svc:$(TAG) --name $(CLUSTER); \
 	done
+	kind load docker-image $(REGISTRY)/pricing:$(DEMO_TAG) --name $(CLUSTER)
 
 env-init: ## Create env/*.env from the templates (does not overwrite existing files)
 	@for f in $(ENV_FILES); do \
@@ -117,8 +124,41 @@ metrics-server: ## Install metrics-server, patched for kind (--kubelet-insecure-
 
 up: cluster-up ingress secrets images load deploy ## Create cluster, install ingress, apply secrets, build/load images, and deploy
 
-bluegreen-demo: ## Apply the blue/green Service-selector-flip lab (k8s/labs/bluegreen-demo.yaml)
+bluegreen-status: ## Show which pricing color the Service currently points at
+	@echo "Service pricing selector:"
+	@kubectl -n $(NAMESPACE) get svc pricing -o jsonpath='  {.spec.selector}{"\n"}'
+	@echo "Deployments:"
+	@kubectl -n $(NAMESPACE) get deploy -l app.kubernetes.io/name=pricing \
+		-o custom-columns=NAME:.metadata.name,COLOR:.metadata.labels.color,IMAGE:.spec.template.spec.containers[0].image,READY:.status.readyReplicas
+	@echo "Serving version (through the Service, via the frontend proxy):"
+	@curl -s --max-time 5 http://localhost/api/pricing/version || echo "  (ingress not reachable)"
+	@echo ""
+
+bluegreen: ## Cut pricing traffic blue -> green by flipping the Service selector (real service)
+	@echo "== before =="
+	@$(MAKE) --no-print-directory bluegreen-status
+	kubectl -n $(NAMESPACE) patch svc pricing -p '{"spec":{"selector":{"color":"green"}}}'
+	@sleep 2
+	@echo "== after =="
+	@$(MAKE) --no-print-directory bluegreen-status
+	@echo "Neither Deployment was touched — only the Service selector moved."
+	@echo "This flip is live-only; the next 'make deploy' resets it to values.yaml's"
+	@echo "activeColor. To make green the persistent default:"
+	@echo "  helm upgrade veloshare $(CHART) -n $(NAMESPACE) --set pricing.blueGreen.activeColor=green"
+	@echo "Roll back now with: make bluegreen-rollback"
+
+bluegreen-rollback: ## Flip pricing traffic back green -> blue
+	kubectl -n $(NAMESPACE) patch svc pricing -p '{"spec":{"selector":{"color":"blue"}}}'
+	@sleep 2
+	@$(MAKE) --no-print-directory bluegreen-status
+
+bluegreen-demo: ## Apply the standalone nginx blue/green lab (k8s/labs/bluegreen-demo.yaml)
 	kubectl apply -n $(NAMESPACE) -f k8s/labs/bluegreen-demo.yaml
+	@echo ""
+	@echo "NOTE: the real blue/green now runs on the pricing service — see 'make bluegreen'."
+	@echo "This lab is the same pattern on a throwaway nginx pair, kept for hands-on practice."
+	@echo "Its curl Pod is blocked by the namespace default-deny NetworkPolicy; to use it, deploy"
+	@echo "with --set global.networkPolicy.enabled=false, or read the color from the Service."
 	@echo ""
 	@echo "Deployed bluegreen-demo-blue + bluegreen-demo-green; Service bluegreen-demo currently -> blue."
 	@echo ""

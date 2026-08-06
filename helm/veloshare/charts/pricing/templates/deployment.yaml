@@ -1,19 +1,53 @@
+{{/*
+Blue/green on the real pricing service (CKAD P3 + D6).
+
+When blueGreen.enabled, this file renders TWO Deployments -- pricing-blue and
+pricing-green -- from one body. Both carry app.kubernetes.io/name: pricing, so
+the NetworkPolicy, the API Ingress and the in-cluster DNS name `pricing` keep
+matching either color; the only difference in their labels is `color`, which
+is what the Service selects on. Each color's own matchLabels include `color`
+too, so the two ReplicaSets never try to adopt each other's Pods.
+
+The `with $root` wrapper re-binds `.` to the chart root inside the range, so
+every .Values reference in the body below reads exactly as it would in a
+single-Deployment template; only name, labels, replicas and the image tag vary
+per color.
+*/}}
+{{- $root := . -}}
+{{- $colors := list -}}
+{{- if .Values.blueGreen.enabled -}}
+{{- $colors = list (dict "name" "blue" "cfg" .Values.blueGreen.blue) (dict "name" "green" "cfg" .Values.blueGreen.green) -}}
+{{- else -}}
+{{- $colors = list (dict "name" "" "cfg" (dict "replicaCount" .Values.replicaCount "tag" "")) -}}
+{{- end -}}
+{{- range $c := $colors }}
+---
+{{- with $root }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "veloshare.fullname" . }}
+  name: {{ include "veloshare.fullname" . }}{{ if $c.name }}-{{ $c.name }}{{ end }}
   namespace: {{ .Values.global.namespace }}
   labels:
     {{- include "veloshare.labels" . | nindent 4 }}
+    {{- if $c.name }}
+    color: {{ $c.name }}
+    {{- end }}
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: {{ $c.cfg.replicaCount }}
   selector:
     matchLabels:
       {{- include "veloshare.selectorLabels" . | nindent 6 }}
+      {{- if $c.name }}
+      color: {{ $c.name }}
+      {{- end }}
   template:
     metadata:
       labels:
         {{- include "veloshare.selectorLabels" . | nindent 8 }}
+        {{- if $c.name }}
+        color: {{ $c.name }}
+        {{- end }}
     spec:
       securityContext:
         {{- include "veloshare.podSecurityContext" (dict "fsGroup" 10001) | nindent 8 }}
@@ -62,8 +96,11 @@ spec:
               mountPath: /tmp
       {{- end }}
       containers:
+        # Container name stays `pricing` for both colors, so `kubectl ... -c pricing`
+        # and `kubectl set image deploy/pricing-blue pricing=...` read the same
+        # either side of a cutover.
         - name: pricing
-          image: "{{ .Values.global.image.registry }}/{{ .Values.image.repository }}:{{ .Values.global.image.tag }}"
+          image: "{{ .Values.global.image.registry }}/{{ .Values.image.repository }}:{{ $c.cfg.tag | default .Values.global.image.tag }}"
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
           securityContext:
             {{- include "veloshare.containerSecurityContext" (dict "runAsUser" 10001) | nindent 12 }}
@@ -81,6 +118,9 @@ spec:
               mountPath: /var/log/veloshare
             - name: tmp
               mountPath: /tmp
+          {{- if .Values.startupProbe.enabled }}
+          {{- include "veloshare.startupProbe" (dict "path" .Values.probePath "port" .Values.containerPort "periodSeconds" .Values.startupProbe.periodSeconds "failureThreshold" .Values.startupProbe.failureThreshold) | nindent 10 }}
+          {{- end }}
           livenessProbe:
             httpGet:
               path: {{ .Values.probePath }}
@@ -113,3 +153,5 @@ spec:
         {{- include "veloshare.ambassadorVolumes" . | nindent 8 }}
         {{- end }}
         {{- include "veloshare.logVolumes" . | nindent 8 }}
+{{- end }}
+{{- end }}

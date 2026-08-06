@@ -1,0 +1,66 @@
+{{- if .Values.global.networkPolicy.enabled }}
+# frontend — the only Pod in the namespace that the outside world reaches.
+#
+# Ingress: the ingress-nginx controller only. Scoped by namespaceSelector to
+# the controller's namespace rather than 0.0.0.0/0, so the browser path is
+# ingress-nginx -> frontend and nothing else may open a connection to it.
+#
+# Egress: the four backend APIs. frontend is an nginx reverse proxy —
+# services/frontend/nginx.conf proxy_passes /api/pricing/ -> http://pricing/,
+# and likewise for rider, station and trip — so this list is exactly the set
+# of upstreams in that config. Same-origin proxying is why the browser never
+# talks to a backend directly and there is no CORS anywhere in this platform.
+#
+# Port 8080 is the ambassador sidecar (what the Service targetPort points at
+# while ambassador.enabled is true); 8000 is the app's own port, included so
+# this policy stays correct if the ambassador is ever turned off.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend-isolation
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "veloshare.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: frontend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: {{ .Values.frontend.containerPort | default 8080 }}
+  egress:
+    - to:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - rider
+                  - station
+                  - trip
+                  - pricing
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 8000
+    {{- if .Values.global.logging.enabled }}
+    # The frontend Pod carries the same log-agent Fluent Bit sidecar as every
+    # other app Pod, and it ships to Elasticsearch when logging is on.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: elasticsearch
+      ports:
+        - protocol: TCP
+          port: 9200
+    {{- end }}
+{{- end }}

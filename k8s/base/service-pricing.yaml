@@ -12,6 +12,7 @@ spec:
   selector:
     app.kubernetes.io/name: pricing
     app.kubernetes.io/instance: veloshare
+    color: blue
   ports:
   - name: http
     port: 80

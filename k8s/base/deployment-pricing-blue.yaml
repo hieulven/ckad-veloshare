@@ -1,23 +1,26 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: trip
+  name: pricing-blue
   namespace: veloshare
   labels:
-    app.kubernetes.io/name: trip
+    app.kubernetes.io/name: pricing
     app.kubernetes.io/instance: veloshare
     app.kubernetes.io/part-of: veloshare
+    color: blue
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: trip
+      app.kubernetes.io/name: pricing
       app.kubernetes.io/instance: veloshare
+      color: blue
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: trip
+        app.kubernetes.io/name: pricing
         app.kubernetes.io/instance: veloshare
+        color: blue
     spec:
       securityContext:
         runAsNonRoot: true
@@ -39,17 +42,12 @@ spec:
         command:
         - sh
         - -c
-        - "for name in DB_PASSWORD JWT_SECRET; do\n  eval \"val=\\$$name\"\n  if [\
-          \ -z \"$val\" ]; then\n    echo \"config check failed: required env var\
-          \ $name is not set\" >&2\n    exit 1\n  fi\ndone\necho \"config check passed:\
-          \ all required env vars present\"\n"
+        - 'echo "config check passed: all required env vars present"
+
+          '
         envFrom:
-        - secretRef:
-            name: trip-db
         - configMapRef:
-            name: trip
-        - secretRef:
-            name: veloshare-auth
+            name: pricing
         resources:
           limits:
             cpu: 50m
@@ -57,7 +55,7 @@ spec:
           requests:
             cpu: 10m
             memory: 32Mi
-      - name: migrate
+      - name: wait-for-deps
         image: postgres:16
         securityContext:
           allowPrivilegeEscalation: false
@@ -69,28 +67,38 @@ spec:
             drop:
             - ALL
         command:
-        - sh
+        - bash
         - -c
-        - PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME
-          -f /migrations/migrate.sql
-        envFrom:
-        - secretRef:
-            name: trip-db
-        volumeMounts:
-        - name: migration
-          mountPath: /migrations
-        - name: tmp
-          mountPath: /tmp
+        - "echo \"waiting for rider at ${RIDER_HOST}:${RIDER_PORT} ...\"\nuntil (exec\
+          \ 3<>/dev/tcp/${RIDER_HOST}/${RIDER_PORT}) 2>/dev/null; do\n  echo \"  rider\
+          \ not reachable yet, retrying in 2s\"; sleep 2\ndone\nexec 3>&- 2>/dev/null\
+          \ || true\necho \"rider is reachable.\"\n\necho \"checking database at ${DB_HOST}:${DB_PORT}\
+          \ ...\"\nuntil pg_isready -h \"${DB_HOST}\" -p \"${DB_PORT}\" >/dev/null\
+          \ 2>&1; do\n  echo \"  database not accepting connections yet, retrying\
+          \ in 2s\"; sleep 2\ndone\necho \"database is accepting connections. dependencies\
+          \ satisfied.\"\n"
+        env:
+        - name: RIDER_HOST
+          value: rider
+        - name: RIDER_PORT
+          value: '80'
+        - name: DB_HOST
+          value: postgres
+        - name: DB_PORT
+          value: '5432'
         resources:
           limits:
-            cpu: 200m
+            cpu: 100m
             memory: 128Mi
           requests:
             cpu: 25m
             memory: 64Mi
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
       containers:
-      - name: trip
-        image: veloshare/trip:0.1.0
+      - name: pricing
+        image: veloshare/pricing:0.1.0
         imagePullPolicy: IfNotPresent
         securityContext:
           allowPrivilegeEscalation: false
@@ -105,12 +113,8 @@ spec:
         - name: http
           containerPort: 8000
         envFrom:
-        - secretRef:
-            name: trip-db
         - configMapRef:
-            name: trip
-        - secretRef:
-            name: veloshare-auth
+            name: pricing
         env:
         - name: PYTHONDONTWRITEBYTECODE
           value: '1'
@@ -207,12 +211,9 @@ spec:
       volumes:
       - name: tmp
         emptyDir: {}
-      - name: migration
-        configMap:
-          name: trip-migration
       - name: ambassador-config
         configMap:
-          name: trip-ambassador
+          name: pricing-ambassador
       - name: ambassador-tmp
         emptyDir: {}
       - name: ambassador-cache

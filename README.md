@@ -75,7 +75,7 @@ Mỗi service có **image riêng**, Dockerfile riêng, và được triển khai
 | `rider` | Python / FastAPI | CRUD người dùng, tra cứu hạng, **cấp JWT** (`/auth/login`) | PostgreSQL schema `riders` | Deployment |
 | `station` | Python / FastAPI | Quản lý trạm và số chỗ đỗ | PostgreSQL schema `stations` | Deployment |
 | `trip` | Python / FastAPI | Vòng đời chuyến đi, điều phối `rider` + `pricing`, bắn sự kiện | PostgreSQL schema `trips`, Redis | Deployment |
-| `pricing` | Python / FastAPI | Tính cước `{phút, hạng, surge} → {cents}` | Không lưu trạng thái | Deployment + **HPA** |
+| `pricing` | Python / FastAPI | Tính cước `{phút, hạng, surge} → {cents}` | Không lưu trạng thái | **2 Deployment (blue/green)** + **HPA** |
 | `fleet-monitor` | Bash + psql | Báo cáo chỉ số người dùng/doanh thu cho quản lý | Không lưu trạng thái | **CronJob** `0 0 * * *` |
 | `frontend` | nginx + JS thuần | Giao diện web, reverse-proxy `/api/*` (cùng origin, không cần CORS) | Không lưu trạng thái | Deployment |
 | `pod-lister` | Bash + kubectl API | Lab RBAC: dùng ServiceAccount riêng gọi API liệt kê Pod | Không lưu trạng thái | **CronJob** `*/5 * * * *` |
@@ -276,14 +276,19 @@ kubectl -n veloshare rollout restart deploy/rider
 kubectl -n veloshare rollout status deploy/rider
 ```
 
-### 5.3b Tag thứ hai của `pricing` (phục vụ demo pin image theo môi trường)
+### 5.3b Tag thứ hai của `pricing` (phục vụ blue/green và pin image theo môi trường)
 
-Overlay `dev` pin `pricing:0.1.0`, overlay `prod` pin `pricing:0.2.0`. Cả hai tag đều được
-build thật từ `services/pricing` và nạp vào cluster:
+`pricing` tồn tại ở **hai tag** trong cluster, và hai thứ phụ thuộc vào điều đó:
+
+- **blue/green**: `pricing-blue` chạy `0.1.0`, `pricing-green` chạy `0.2.0` (xem §5.3c)
+- **overlay**: `dev` pin màu đang chạy ở `0.1.0`, `prod` pin ở `0.2.0`
+
+Vì vậy `make images` / `make load` (và do đó cả `make up`) đã build+nạp sẵn cả hai tag:
 
 ```sh
-make images-demo-tag           # = TAG=0.2.0 ./scripts/build.sh pricing
+make images                    # 7 image ở 0.1.0, cộng pricing:0.2.0
 docker images | grep veloshare/pricing        # thấy cả 0.1.0 và 0.2.0
+make images-demo-tag           # chỉ build lại riêng tag 0.2.0 khi cần
 ```
 
 Giá trị version được **nướng vào image lúc build** (`ARG APP_VERSION` trong
@@ -291,9 +296,42 @@ Giá trị version được **nướng vào image lúc build** (`ARG APP_VERSION
 `--build-arg APP_VERSION=$TAG`), nên pod **không thể báo sai** image nó đang chạy:
 
 ```sh
-kubectl -n veloshare exec deploy/pricing -c ambassador -- curl -s 127.0.0.1:8080/version
+kubectl -n veloshare exec deploy/pricing-blue  -c ambassador -- curl -s 127.0.0.1:8080/version
 # {"service":"pricing","version":"0.1.0"}
+kubectl -n veloshare exec deploy/pricing-green -c ambassador -- curl -s 127.0.0.1:8080/version
+# {"service":"pricing","version":"0.2.0"}
 ```
+
+### 5.3c Blue/green trên service `pricing`
+
+`pricing` chạy **hai Deployment cùng lúc** — `pricing-blue` và `pricing-green` — sinh ra từ
+đúng một thân template ([`charts/pricing/templates/deployment.yaml`](./helm/veloshare/charts/pricing/templates/deployment.yaml)).
+Cả hai mang nhãn `app.kubernetes.io/name: pricing` (nên NetworkPolicy, Ingress và tên DNS
+`pricing` khớp với cả hai), chỉ khác nhau ở nhãn `color` — và `color` cũng nằm trong
+`selector.matchLabels` của từng Deployment nên hai ReplicaSet không bao giờ giành Pod của nhau.
+
+Service `pricing` chọn **một màu** tại một thời điểm. Chuyển traffic = patch đúng một dòng
+selector: tên Service, ClusterIP và DNS giữ nguyên, **không Deployment nào bị đụng tới**.
+
+```sh
+make bluegreen-status     # màu nào đang phục vụ, image/version của từng màu
+make bluegreen            # blue -> green, in bằng chứng trước/sau
+make bluegreen-rollback   # green -> blue
+```
+
+Bằng tay:
+
+```sh
+curl -s localhost/api/pricing/version         # {"service":"pricing","version":"0.1.0"}
+kubectl -n veloshare patch svc pricing -p '{"spec":{"selector":{"color":"green"}}}'
+curl -s localhost/api/pricing/version         # {"service":"pricing","version":"0.2.0"}
+kubectl -n veloshare get pods -l app.kubernetes.io/name=pricing   # vẫn đúng 2 Pod đó, cùng AGE
+```
+
+> Patch bằng `kubectl` chỉ có hiệu lực **tới lần `make deploy` kế tiếp** — Helm sẽ đặt lại
+> selector theo `values.yaml`. Muốn giữ green làm mặc định:
+> `helm upgrade veloshare ./helm/veloshare -n veloshare --set pricing.blueGreen.activeColor=green`.
+> HPA cũng bám theo `activeColor`.
 
 > `/healthz` **cố ý giữ nguyên** `{"status":"ok"}` — probe và `scripts/smoke-test.sh` so khớp
 > chính xác chuỗi này, nên version được đưa ra endpoint `/version` riêng.
@@ -332,21 +370,21 @@ Bảng đầy đủ (yêu cầu → file cài đặt → lệnh kiểm chứng) 
 | ID | Kiểm chứng |
 |---|---|
 | D1 | `ls services/*/Dockerfile` → 7 Dockerfile; `docker images \| grep veloshare` → tag `0.1.0`, không có `:latest` |
-| D2 | `kubectl -n veloshare get deploy,sts,cronjob` → 6 Deployment, 1 StatefulSet, 2 CronJob |
+| D2 | `kubectl -n veloshare get deploy,sts,cronjob` → 7 Deployment (`pricing` là hai màu blue/green), 1 StatefulSet, 2 CronJob |
 | D3 | `kubectl -n veloshare get pod -l app.kubernetes.io/name=rider -o jsonpath='{.items[0].spec.initContainers[*].name} {.items[0].spec.containers[*].name}'` → `config-check migrate rider ambassador log-agent` |
 | D4 | `kubectl -n veloshare exec deploy/rider -c rider -- ls /var/log/veloshare` rồi `kubectl -n veloshare logs deploy/rider -c log-agent` → cùng dòng log qua `emptyDir` dùng chung |
 | D5 | `kubectl -n veloshare get pvc` → `data-postgres-0` + `fleet-monitor-reports` đều `Bound` |
-| D6 | `kubectl -n veloshare get pods --show-labels` ; lab blue/green: `k8s/labs/bluegreen-demo.yaml` |
+| D6 | `kubectl -n veloshare get pods --show-labels -l app.kubernetes.io/name=pricing` → hai Pod cùng `name=pricing`, khác `color`; `kubectl -n veloshare get svc pricing -o jsonpath='{.spec.selector}'` → selector đang trỏ màu nào |
 
 ### 4.2 Application Deployment
 
 | ID | Kiểm chứng |
 |---|---|
-| P1 | `kubectl -n veloshare get deploy` → 6 Deployment, đều `READY 1/1` trở lên |
-| P2 | `kubectl -n veloshare rollout restart deploy/pricing && kubectl -n veloshare rollout status deploy/pricing` |
-| P3 | `kubectl apply -f k8s/labs/bluegreen-demo.yaml` rồi `kubectl -n veloshare patch svc bluegreen-demo -p '{"spec":{"selector":{"color":"green"}}}'` |
+| P1 | `kubectl -n veloshare get deploy` → 7 Deployment, đều `READY 1/1` trở lên |
+| P2 | `kubectl -n veloshare rollout restart deploy/pricing-blue && kubectl -n veloshare rollout status deploy/pricing-blue` |
+| P3 | Blue/green **trên chính service `pricing`**: `make bluegreen-status` → hai Deployment `pricing-blue` (0.1.0) / `pricing-green` (0.2.0); `make bluegreen` → patch selector của Service, `curl -s localhost/api/pricing/version` đổi từ `0.1.0` sang `0.2.0` mà **không Pod nào bị thay**; `make bluegreen-rollback` để quay lại |
 | P4 | `kubectl -n veloshare get hpa` → `cpu: N%/70%` (không phải `<unknown>`) |
-| P5 | `diff <(kubectl kustomize k8s/overlays/dev) <(kubectl kustomize k8s/overlays/prod)` → khác **image tag** (`pricing:0.1.0` vs `0.2.0`), **replicas** (1 vs 2) và **ResourceQuota**. Chứng minh pod đang chạy image nào: `kubectl -n veloshare exec deploy/pricing -c ambassador -- curl -s 127.0.0.1:8080/version` |
+| P5 | `diff <(kubectl kustomize k8s/overlays/dev) <(kubectl kustomize k8s/overlays/prod)` → khác **image tag** của màu đang chạy (`pricing-blue`: `0.1.0` vs `0.2.0`), **replicas** (1 vs 2) và **ResourceQuota**. Chứng minh pod đang chạy image nào: `kubectl -n veloshare exec deploy/pricing-blue -c ambassador -- curl -s 127.0.0.1:8080/version` |
 | P6 | `helm -n veloshare history veloshare` rồi `make rollback REV=1` |
 
 ### 4.3 Application Environment, Configuration & Security
@@ -367,7 +405,7 @@ Bảng đầy đủ (yêu cầu → file cài đặt → lệnh kiểm chứng) 
 | N1 | `kubectl -n veloshare get svc` → ClusterIP cho toàn bộ traffic nội bộ |
 | N2 | `curl -s -o /dev/null -w '%{http_code}' http://localhost/` → `200` (Ingress); `frontend` còn có NodePort |
 | N3 | `kubectl -n veloshare get ingress` → 2 Ingress, 3 path rule (`/`, `/kibana`, `/api/healthz`) tới 2+ backend |
-| N4 | `kubectl -n veloshare get netpol` ; chứng minh cấm/cho phép: `make demo` bước 7 |
+| N4 | `kubectl -n veloshare get netpol` → **8 policy**: `default-deny` (podSelector rỗng, chặn cả hai chiều cho MỌI Pod) + 7 policy cho phép có phạm vi. `kubectl -n veloshare get netpol default-deny -o jsonpath='{.spec}'` → không có một rule nào. Chứng minh cấm/cho phép: `make demo` bước 7 |
 | N5 | `kubectl -n veloshare get endpointslices` → mọi Service đều có endpoint, không có `<none>` |
 
 ### 4.5 Application Observability and Maintenance
@@ -375,7 +413,7 @@ Bảng đầy đủ (yêu cầu → file cài đặt → lệnh kiểm chứng) 
 | ID | Kiểm chứng |
 |---|---|
 | O1/O2 | `kubectl -n veloshare get deploy rider -o jsonpath='{.spec.template.spec.containers[0].livenessProbe}{"\n"}{.spec.template.spec.containers[0].readinessProbe}'` |
-| O3 | *(Khuyến nghị, không bắt buộc)* elasticsearch/kibana có `startupProbe`; lab độc lập: `k8s/labs/probes-demo.yaml`. Bốn service FastAPI khởi động dưới 1 giây nên cố ý không dùng |
+| O3 | `helm template veloshare ./helm/veloshare \| grep -c startupProbe` → **6** ngay ở cấu hình mặc định (5 workload; `pricing` render hai lần, mỗi màu một bản): `rider`/`station`/`trip`/`pricing` (HTTP `/healthz`, 2s × 30 = 60s) và `postgres` (`pg_isready`, 3s × 40 = 120s, vì lần khởi động đầu phải chạy `initdb` + `init.sql`). Bật logging thêm elasticsearch/kibana thành 8. `frontend`/`redis` cố ý không có: cả hai lắng nghe dưới 1 giây. Lab độc lập: `k8s/labs/probes-demo.yaml` |
 | O4 | Xem [§8](#8-giới-hạn-đã-biết) và bảng lệnh debug ngay dưới đây |
 | O5 | `grep -rh '^apiVersion' k8s/ \| sort -u` → chỉ có API ổn định: `v1`, `apps/v1`, `batch/v1`, `autoscaling/v2`, `networking.k8s.io/v1`, `rbac.authorization.k8s.io/v1` (cộng `kustomize.config.k8s.io/v1beta1` của chính file kustomization, không phải API của cluster). Không có `extensions/v1beta1` hay `autoscaling/v2beta*` |
 
@@ -428,7 +466,7 @@ Mỗi bước trình bày **ba phần** để người chấm lần được t�
 | 2 | Ingress định tuyến `/` và `/api/healthz` | N2, N3, O5 |
 | 3 | Inject ConfigMap/Secret; chart render 0 Secret | C1, C2 |
 | 4 | Probe: xoá pod `rider`, endpoint rớt rồi quay lại khi readiness pass | O1, O2, O3 |
-| 5 | Rolling update + đảo blue/green bằng một lệnh patch selector | P2, P3, D6 |
+| 5 | Rolling update trên `pricing-blue`, rồi đảo blue/green **trên chính Service `pricing`** bằng một lệnh patch selector — `/version` đổi từ `0.1.0` sang `0.2.0` mà không Pod nào bị thay | P2, P3, D6 |
 | 6 | HPA đang tính được metric thật | P4 |
 | 7 | NetworkPolicy: cùng image, cùng URL, **chỉ khác label** → một bên timeout, một bên 200 | N4 |
 | 8 | Ghi dữ liệu → xoá `postgres-0` → đọc lại từ cùng PVC | D5 |
@@ -448,11 +486,19 @@ thái ban đầu sau khi chạy.
   gọi trực tiếp thì không có gì chặn.
 - `k8s/` **được sinh ra** từ `helm/veloshare`. Sửa tay trong `k8s/base/` sẽ bị `make gen-k8s`
   ghi đè — sửa chart rồi sinh lại.
-- Chỉ **`pricing`** được build ở hai tag (`0.1.0` cho overlay `dev`, `0.2.0` cho overlay `prod`)
-  để minh hoạ pin image theo môi trường. Sáu service còn lại chỉ tồn tại đúng một tag `0.1.0`
+- Chỉ **`pricing`** được build ở hai tag (`0.1.0` cho `pricing-blue` / overlay `dev`, `0.2.0`
+  cho `pricing-green` / overlay `prod`). Sáu service còn lại chỉ tồn tại đúng một tag `0.1.0`
   trong cluster kind nên **không** được pin trong overlay — pin một tag chưa từng nạp sẽ render
   ra manifest không kéo được image. Tag `0.2.0` build từ **cùng một source**, chỉ khác giá trị
-  `APP_VERSION` nướng vào lúc build, nên không có khác biệt hành vi ngoài `GET /version`.
+  `APP_VERSION` nướng vào lúc build, nên không có khác biệt hành vi ngoài `GET /version`. Nghĩa
+  là blue/green ở đây chứng minh **cơ chế cắt traffic**, không phải một thay đổi nghiệp vụ.
+- **`pricing-green` luôn chạy**, kể cả khi không ai đảo màu. Đó là bản chất của blue/green
+  (phải có sẵn đích ấm để cắt sang) chứ không phải Pod thừa — nhưng nó tốn thêm 45m CPU /
+  176Mi requests và đã được tính vào `ResourceQuota`.
+- **Lab độc lập `k8s/labs/bluegreen-demo.yaml` giờ đã thừa** so với blue/green thật ở trên;
+  giữ lại chỉ để thực hành trên cặp nginx dùng một lần. Pod `kubectl run` curl của nó bị
+  `default-deny` NetworkPolicy chặn — chạy với `--set global.networkPolicy.enabled=false`
+  hoặc đọc màu trực tiếp từ Service.
 
 **Về vận hành**
 
@@ -468,6 +514,14 @@ thái ban đầu sau khi chạy.
   SMTP/webhook — ngoài phạm vi môi trường học tập cục bộ.
 
 **Về bảo mật — đây là môi trường học tập, không phải chuẩn mực production**
+
+- **`default-deny` NetworkPolicy phủ toàn namespace** (`podSelector: {}`), nên **mọi Pod tự
+  apply vào `veloshare` đều không có mạng** cho tới khi có policy gọi tên nó. Đó là chủ đích,
+  không phải lỗi — nhưng nhớ điều này khi chạy các lab trong `k8s/labs/`. Tắt cả bộ bằng
+  `--set global.networkPolicy.enabled=false`, hoặc dùng namespace `veloshare-lab` (`make lab`).
+- `pod-lister-api-egress` buộc phải dùng `ipBlock: 0.0.0.0/0` (giới hạn ở cổng 443/6443) vì
+  kube-proxy DNAT `kubernetes.default.svc` về **IP của node**, không podSelector nào khớp được.
+  Đây là đánh đổi có ý thức, giải thích ngay trong file policy.
 
 - Elasticsearch chạy `xpack.security.enabled=false`; toàn bộ giao tiếp là **HTTP thuần, không TLS**.
 - Secret chỉ được **base64 trong etcd**, không mã hoá. Môi trường thật nên dùng
