@@ -1,0 +1,101 @@
+# Lab 5.3, pair 3 (broken) — image: veloshare/pricing:9.9.9, a tag that was
+# never built and never `kind load docker-image`-ed into the cluster.
+#
+# On a kind cluster there is no registry in the loop for veloshare/* images
+# at all -- `make images` builds them locally and `make load` side-loads
+# them straight into every node's containerd. imagePullPolicy: IfNotPresent
+# only skips a pull when the exact tag is ALREADY present on that node; any
+# tag that was never loaded -- typo or genuinely nonexistent -- fails to
+# pull, because there is nowhere to pull it FROM (no registry is configured
+# for veloshare/pricing) and it is not cached locally either.
+#
+# EXPECTED SYMPTOM:
+#   $ kubectl -n veloshare-lab get pod -l app.kubernetes.io/instance=lab-triage-image
+#   NAME                                 READY   STATUS         RESTARTS   AGE
+#   lab-triage-image-xxxxxxxxxx-xxxxx    0/1     ErrImagePull   0          10s
+#   (then, after kubelet backs off retrying)
+#   lab-triage-image-xxxxxxxxxx-xxxxx    0/1     ImagePullBackOff   0      40s
+#
+#   $ kubectl -n veloshare-lab describe pod -l app.kubernetes.io/instance=lab-triage-image | tail -10
+#   Warning  Failed   ...  kubelet  Failed to pull image "veloshare/pricing:9.9.9":
+#   rpc error: ... failed to resolve reference "docker.io/veloshare/pricing:9.9.9":
+#   docker.io/veloshare/pricing:9.9.9: not found
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lab-triage-image
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "5.3"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: pricing
+      app.kubernetes.io/instance: lab-triage-image
+      lab: "5.3"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: pricing
+        app.kubernetes.io/part-of: veloshare
+        app.kubernetes.io/component: ckad-lab
+        app.kubernetes.io/instance: lab-triage-image
+        lab: "5.3"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: pricing
+          image: veloshare/pricing:9.9.9   # <-- bug: never built/loaded
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          volumeMounts:
+            - name: logs
+              mountPath: /var/log/veloshare
+            - name: tmp
+              mountPath: /tmp
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 25m
+              memory: 96Mi
+            limits:
+              cpu: 150m
+              memory: 192Mi
+      volumes:
+        - name: logs
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

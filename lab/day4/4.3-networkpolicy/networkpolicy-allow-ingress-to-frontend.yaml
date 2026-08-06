@@ -1,0 +1,46 @@
+# Lab 4.3, step 4 — let the ingress controller reach the frontend.
+#
+# Easy to forget, and its absence is invisible until you test the RIGHT path.
+# The previous file re-opened ingress-nginx -> pricing, which keeps lab 4.2's
+# `/api` route alive. But lab 4.2 has a SECOND route: `/` -> frontend. That one
+# is still cut off by the default-deny, because nothing so far names frontend as
+# an ingress destination.
+#
+# The symptom is the trap worth remembering: `curl -H 'Host: lab.veloshare.local'
+# http://localhost/api/healthz` keeps working, so the Ingress "obviously" still
+# works -- while `curl .../` hangs and then returns 504. One route surviving tells
+# you nothing about the other. A NetworkPolicy audit has to enumerate every
+# destination, not spot-check one.
+#
+# Note there is no matching egress rule for frontend -> ingress-nginx: replies on
+# an established connection are not separately evaluated. NetworkPolicy is
+# stateful, so allowing the inbound connection allows its responses. Egress rules
+# govern connections frontend ORIGINATES (its proxy_pass to pricing, which is the
+# previous file's job).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: lab-allow-ingress-to-frontend
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "4.3"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: frontend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        # frontend's nginx listens on 8080 (nginxinc/nginx-unprivileged cannot
+        # bind 80 as non-root). The Service maps 80 -> 8080; NetworkPolicy sees
+        # the Pod port, so 8080 is what belongs here.
+        - protocol: TCP
+          port: 8080

@@ -1,0 +1,22 @@
+# Raises the namespace quota to fit the prod overlay's doubled API replicas.
+#
+# Dev footprint is ~315m CPU / 992Mi requested across 7 Pods. Prod adds one more
+# replica each for rider/station/trip/pricing/frontend -- and every app Pod is
+# 3 containers (app + ambassador + log-agent), so that is 5 Pods / 15 containers
+# more, not 5 containers. The headroom below is deliberately generous so a
+# rolling update (which briefly runs maxSurge extra Pods) does not wedge against
+# the quota mid-rollout.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: veloshare-quota
+  # The namespace must be spelled out: the rendered object in k8s/quota/ carries
+  # `namespace: veloshare`, and a patch target without it matches nothing.
+  namespace: veloshare
+spec:
+  hard:
+    pods: "30"
+    requests.cpu: "1500m"
+    requests.memory: "3Gi"
+    limits.cpu: "6"
+    limits.memory: "8Gi"

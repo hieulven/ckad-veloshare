@@ -1,0 +1,58 @@
+# Lab 3.3 — ServiceAccount + Role + RoleBinding, least privilege.
+#
+# Mirrors the platform's real RBAC demo (k8s/security/*.yaml, rendered from
+# helm/veloshare/templates/rbac-demo-*.yaml) but scoped to the lab namespace so
+# you can bind, unbind and re-bind it without touching the live release.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: lab-pod-lister
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "3.3"
+---
+# A Role is NAMESPACE-scoped: these verbs apply only inside veloshare-lab.
+# The cluster-wide equivalent would be a ClusterRole.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: lab-pod-lister
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "3.3"
+rules:
+  - apiGroups:
+      # "" is the core API group — pods, services, configmaps, secrets.
+      - ""
+    resources:
+      - pods
+    verbs:
+      # Read-only, and only pods. Deliberately NOT create/delete, and
+      # deliberately not "secrets" — that is the least-privilege point.
+      - get
+      - list
+      - watch
+---
+# The RoleBinding is what actually grants anything. A Role on its own is inert.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: lab-pod-lister
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "3.3"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: lab-pod-lister
+subjects:
+  - kind: ServiceAccount
+    name: lab-pod-lister
+    namespace: veloshare-lab

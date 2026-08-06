@@ -9,6 +9,12 @@ CHART     ?= ./helm/veloshare
 REGISTRY  ?= veloshare
 TAG       ?= 0.1.0
 
+# Second tag of ONE service (pricing), built from the same source, so the
+# Kustomize overlays can pin genuinely different images per environment:
+# k8s/overlays/dev pins $(TAG), k8s/overlays/prod pins $(DEMO_TAG). Built by
+# `make images-demo-tag`; not part of `make images` / `make up`.
+DEMO_TAG  ?= 0.2.0
+
 SERVICES  := pricing rider station trip fleet-monitor frontend pod-lister
 
 # Per-pod config + credentials. env/<name>.env is local-only and gitignored;
@@ -17,12 +23,12 @@ SERVICES  := pricing rider station trip fleet-monitor frontend pod-lister
 ENV_DIR   ?= env
 ENV_FILES := postgres rider station trip auth
 
-.PHONY: help cluster-up cluster-down lint template deploy uninstall images load ingress up env-init secrets seed \
-	metrics-server history rollback bluegreen-demo bluegreen-clean demo smoke-test
+.PHONY: help cluster-up cluster-down lint template deploy gen-k8s deploy-kubectl uninstall images images-demo-tag load ingress up env-init secrets seed \
+	metrics-server history rollback bluegreen-demo bluegreen-clean demo evidence smoke-test
 
 help: ## Show available targets
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
-		| awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
+		| awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 cluster-up: ## Create the local kind cluster
 	kind create cluster --name $(CLUSTER) --config kind-config.yaml
@@ -39,6 +45,12 @@ template: ## Render the umbrella chart locally (no cluster needed)
 deploy: lint ## Install/upgrade the platform onto the cluster
 	helm upgrade --install $(RELEASE) $(CHART) -n $(NAMESPACE) --create-namespace
 
+gen-k8s: ## Regenerate k8s/ raw manifests from the Helm chart
+	@./scripts/gen-k8s.sh
+
+deploy-kubectl: ## Deploy via raw kubectl/Kustomize instead of Helm (make deploy-kubectl OVERLAY=prod)
+	@./scripts/deploy.sh kubectl $(or $(OVERLAY),dev)
+
 uninstall: ## Remove the platform release (asks first in practice)
 	helm uninstall $(RELEASE) -n $(NAMESPACE)
 
@@ -54,8 +66,15 @@ rollback: ## Roll back the Helm release to revision REV (make rollback REV=2)
 
 images: ## Build all app images
 	@for svc in $(SERVICES); do \
-		docker build -t $(REGISTRY)/$$svc:$(TAG) ./$$svc; \
+		docker build -t $(REGISTRY)/$$svc:$(TAG) ./services/$$svc; \
 	done
+
+images-demo-tag: ## Build+load a second pricing tag (DEMO_TAG, default 0.2.0) so k8s/overlays/prod pins a different image
+	@TAG=$(DEMO_TAG) ./scripts/build.sh pricing
+	@echo ""
+	@echo "pricing now exists at two tags in cluster '$(CLUSTER)': $(TAG) (dev overlay) and $(DEMO_TAG) (prod overlay)."
+	@echo "Prove which one a Pod is running:"
+	@echo "  kubectl -n $(NAMESPACE) exec deploy/pricing -c ambassador -- curl -s 127.0.0.1:8080/version"
 
 load: ## Load all app images into the kind cluster
 	@for svc in $(SERVICES); do \
@@ -97,8 +116,8 @@ metrics-server: ## Install metrics-server, patched for kind (--kubelet-insecure-
 
 up: cluster-up ingress secrets images load deploy ## Create cluster, install ingress, apply secrets, build/load images, and deploy
 
-bluegreen-demo: ## Apply the blue/green Service-selector-flip lab (bluegreen-demo.yaml)
-	kubectl apply -n $(NAMESPACE) -f bluegreen-demo.yaml
+bluegreen-demo: ## Apply the blue/green Service-selector-flip lab (k8s/labs/bluegreen-demo.yaml)
+	kubectl apply -n $(NAMESPACE) -f k8s/labs/bluegreen-demo.yaml
 	@echo ""
 	@echo "Deployed bluegreen-demo-blue + bluegreen-demo-green; Service bluegreen-demo currently -> blue."
 	@echo ""
@@ -115,10 +134,13 @@ bluegreen-demo: ## Apply the blue/green Service-selector-flip lab (bluegreen-dem
 
 bluegreen-clean: ## DESTRUCTIVE: delete the blue/green demo Deployments/ConfigMaps/Service
 	@echo "DESTRUCTIVE: deleting bluegreen-demo-blue, bluegreen-demo-green, their ConfigMaps, and the Service."
-	kubectl delete -n $(NAMESPACE) -f bluegreen-demo.yaml
+	kubectl delete -n $(NAMESPACE) -f k8s/labs/bluegreen-demo.yaml
 
 demo: ## Run the guided end-to-end demo script
 	@./scripts/demo.sh
+
+evidence: ## Non-interactive demo pass: refresh docs/evidence/*.yaml (read-only, skips destructive steps)
+	@AUTO=1 ./scripts/demo.sh
 
 smoke-test: ## Run smoke tests against the deployed platform
 	@./scripts/smoke-test.sh

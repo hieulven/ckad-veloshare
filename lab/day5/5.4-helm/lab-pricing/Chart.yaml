@@ -1,0 +1,12 @@
+# Lab 5.4 — a minimal, self-contained Helm chart wrapping the platform's own
+# pricing image. Deliberately NOT a dependency of/on helm/veloshare: this
+# chart carries its own _helpers.tpl (see templates/_helpers.tpl) instead of
+# calling `include "veloshare.*"`, because those definitions live in the
+# umbrella chart's own templates/ directory and are not visible to a chart
+# installed standalone with `helm install lab-pricing ./lab-pricing`.
+apiVersion: v2
+name: lab-pricing
+description: CKAD lab 5.4 — standalone Helm chart wrapping veloshare/pricing for install/upgrade/rollback practice.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

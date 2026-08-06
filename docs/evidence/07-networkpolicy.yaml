@@ -1,0 +1,93 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    meta.helm.sh/release-name: veloshare
+    meta.helm.sh/release-namespace: veloshare
+  creationTimestamp: "2026-08-05T15:32:59Z"
+  generation: 1
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: veloshare
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/version: 0.1.0
+    helm.sh/chart: veloshare-0.1.0
+  name: backend-isolation
+  namespace: veloshare
+  resourceVersion: "72607"
+  uid: 29515b1e-371a-4368-a08f-6691fee6411d
+spec:
+  egress:
+  - ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+  - ports:
+    - port: 5432
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: postgres
+  - ports:
+    - port: 6379
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: redis
+  - ports:
+    - port: 8080
+      protocol: TCP
+    - port: 8000
+      protocol: TCP
+    to:
+    - podSelector:
+        matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: In
+          values:
+          - rider
+          - station
+          - trip
+          - pricing
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: frontend
+    - podSelector:
+        matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: In
+          values:
+          - rider
+          - station
+          - trip
+          - pricing
+    ports:
+    - port: 8080
+      protocol: TCP
+    - port: 8000
+      protocol: TCP
+  podSelector:
+    matchExpressions:
+    - key: app.kubernetes.io/name
+      operator: In
+      values:
+      - rider
+      - station
+      - trip
+      - pricing
+  policyTypes:
+  - Ingress
+  - Egress

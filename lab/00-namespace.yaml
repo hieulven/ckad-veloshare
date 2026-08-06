@@ -1,0 +1,24 @@
+# The lab namespace — every object created by lab/run-lab.sh lives here.
+#
+# Deliberately NOT the `veloshare` namespace. Half of these labs exist to break
+# something (quota rejection, selector mismatch, denied egress, a container that
+# fails its probe), and several delete and recreate Pods. Doing that in
+# `veloshare` would fight with the Helm release for ownership and take the real
+# platform down mid-demo. Same isolation reasoning as k8s/labs/ — see
+# CLAUDE.md "Deliberate rough edges".
+#
+# What IS shared with `veloshare`: the workloads. Every lab runs the project's
+# own images (veloshare/pricing:0.1.0, veloshare/frontend:0.1.0,
+# veloshare/pod-lister:0.1.0) rather than a stock nginx off Docker Hub, so the
+# object under test is always a real VeloShare service.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: veloshare-lab
+  labels:
+    # kubernetes.io/metadata.name is set automatically by the API server, but
+    # NetworkPolicy namespaceSelectors in lab 4.3 match on it, so it's spelled
+    # out here as documentation of what those selectors key off.
+    kubernetes.io/metadata.name: veloshare-lab
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab

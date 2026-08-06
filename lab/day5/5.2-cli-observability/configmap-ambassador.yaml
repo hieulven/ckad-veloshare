@@ -1,0 +1,29 @@
+# Lab 5.2 — nginx config for the ambassador sidecar in deployment-multicontainer.yaml.
+#
+# Same pattern as the real platform's veloshare.ambassadorConf helper
+# (helm/veloshare/templates/_helpers.tpl): a single server block on 8080
+# that reverse-proxies everything to the app container over 127.0.0.1 --
+# containers in one Pod share a network namespace, so "127.0.0.1:8000" from
+# the ambassador container reaches the pricing container next to it without
+# going through the Service or any DNS lookup at all.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lab-observe-ambassador
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "5.2"
+data:
+  default.conf: |
+    server {
+        listen 8080;
+        location / {
+            proxy_pass http://127.0.0.1:8000;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        }
+    }

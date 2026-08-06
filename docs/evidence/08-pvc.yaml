@@ -1,0 +1,79 @@
+apiVersion: v1
+items:
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    annotations:
+      pv.kubernetes.io/bind-completed: "yes"
+      pv.kubernetes.io/bound-by-controller: "yes"
+      volume.beta.kubernetes.io/storage-provisioner: rancher.io/local-path
+      volume.kubernetes.io/selected-node: veloshare-worker
+      volume.kubernetes.io/storage-provisioner: rancher.io/local-path
+    creationTimestamp: "2026-08-05T15:33:10Z"
+    finalizers:
+    - kubernetes.io/pvc-protection
+    labels:
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/name: postgres
+    name: data-postgres-0
+    namespace: veloshare
+    resourceVersion: "72863"
+    uid: 471c2159-eda3-4fdb-a3ec-8a0fa37659c4
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 1Gi
+    storageClassName: standard
+    volumeMode: Filesystem
+    volumeName: pvc-471c2159-eda3-4fdb-a3ec-8a0fa37659c4
+  status:
+    accessModes:
+    - ReadWriteOnce
+    capacity:
+      storage: 1Gi
+    phase: Bound
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    annotations:
+      meta.helm.sh/release-name: veloshare
+      meta.helm.sh/release-namespace: veloshare
+      pv.kubernetes.io/bind-completed: "yes"
+      pv.kubernetes.io/bound-by-controller: "yes"
+      volume.beta.kubernetes.io/storage-provisioner: rancher.io/local-path
+      volume.kubernetes.io/selected-node: veloshare-worker2
+      volume.kubernetes.io/storage-provisioner: rancher.io/local-path
+    creationTimestamp: "2026-08-05T15:33:00Z"
+    finalizers:
+    - kubernetes.io/pvc-protection
+    labels:
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: fleet-monitor
+      app.kubernetes.io/part-of: veloshare
+      app.kubernetes.io/version: 0.1.0
+      helm.sh/chart: fleet-monitor-0.1.0
+    name: fleet-monitor-reports
+    namespace: veloshare
+    resourceVersion: "76215"
+    uid: fbf54118-ab49-4ce8-804b-9663236276ee
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 100Mi
+    storageClassName: standard
+    volumeMode: Filesystem
+    volumeName: pvc-fbf54118-ab49-4ce8-804b-9663236276ee
+  status:
+    accessModes:
+    - ReadWriteOnce
+    capacity:
+      storage: 100Mi
+    phase: Bound
+kind: List
+metadata:
+  resourceVersion: ""

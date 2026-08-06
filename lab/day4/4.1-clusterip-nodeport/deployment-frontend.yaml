@@ -1,0 +1,88 @@
+# Lab 4.1 — the frontend half. Single replica: this Deployment exists to be
+# a client that proves the ClusterIP Service below actually works (its
+# baked-in nginx.conf reverse-proxies /api/pricing/ -> http://pricing/), and
+# to be the target of the NodePort Service that gets this lab reachable from
+# outside the cluster without an Ingress.
+#
+# Base image is nginxinc/nginx-unprivileged:1.27-alpine (services/frontend/Dockerfile),
+# which already runs as uid 101 and listens on 8080 — no runAsUser needed,
+# just the same runAsNonRoot check as every other lab Pod.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "4.1"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: frontend
+      lab: "4.1"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: frontend
+        app.kubernetes.io/part-of: veloshare
+        app.kubernetes.io/component: ckad-lab
+        lab: "4.1"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: frontend
+          image: veloshare/frontend:0.1.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 101
+            runAsGroup: 101
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: http
+              containerPort: 8080
+          volumeMounts:
+            # nginx.conf (baked into the image) points its pid file and every
+            # proxy/client/fastcgi temp path at /tmp; access/error logs are
+            # symlinks to /dev/stdout /dev/stderr so they need no volume.
+            - name: tmp
+              mountPath: /tmp
+            # /var/cache/nginx exists in the base image but a read-only
+            # rootfs blocks writes to it regardless of its baked-in ownership.
+            - name: cache
+              mountPath: /var/cache/nginx
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 50m
+              memory: 64Mi
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: cache
+          emptyDir: {}

@@ -1,0 +1,49 @@
+# Lab 3.2, counter-example — what runAsNonRoot actually enforces.
+#
+# Same pricing image, but the container asks to run as UID 0 while the Pod
+# declares runAsNonRoot: true. These contradict each other, so the kubelet
+# refuses to create the container at all.
+#
+# EXPECTED SYMPTOM (this Pod never reaches Running):
+#   kubectl -n veloshare-lab get pod lab-runs-as-root
+#     STATUS: CreateContainerConfigError
+#   kubectl -n veloshare-lab describe pod lab-runs-as-root | tail -5
+#     Error: container has runAsNonRoot and image will run as root
+#
+# The point: the rejection happens at container *creation*, not at admission.
+# `kubectl apply` succeeds and the Pod object exists — you only find out by
+# looking at the Pod's status. That is why "kubectl get pod" is never enough on
+# its own and "describe" is the reflex.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lab-runs-as-root
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "3.2"
+spec:
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: pricing
+      image: veloshare/pricing:0.1.0
+      imagePullPolicy: IfNotPresent
+      securityContext:
+        # <-- the violation. Contradicts runAsNonRoot above.
+        runAsUser: 0
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+      resources:
+        requests:
+          cpu: 25m
+          memory: 64Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi

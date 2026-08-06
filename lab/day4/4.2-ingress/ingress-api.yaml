@@ -1,0 +1,48 @@
+# Lab 4.2 — routes "/api" straight to the pricing Service, with a rewrite.
+#
+# This is a SEPARATE Ingress object from ingress-frontend.yaml, not another
+# rule bolted onto it, and that split is the actual lesson here:
+# nginx.ingress.kubernetes.io/rewrite-target applies to EVERY path inside
+# the Ingress object it is set on, not just the one rule you meant it for.
+# Put a rewrite-target annotation on an Ingress that also carries the "/"
+# rule and you rewrite frontend's traffic too. The platform hit exactly this
+# — see the long incident comment in
+# helm/veloshare/templates/ingress-api.yaml, which used to shadow all of
+# frontend's own /api/* proxying for the same reason and got scoped down to
+# a single literal path afterwards. Splitting the object is the fix, and
+# it's the only fix; the annotation has no per-path scope to opt out with.
+#
+# The regex `/api(/|$)(.*)` captures everything after "/api" into group 2;
+# rewrite-target's `/$2` substitutes it back in, so `/api/healthz` reaches
+# pricing as `/healthz` and `/api/tiers` reaches it as `/tiers` — pricing's
+# actual routes (services/pricing/main.py), never knowing "/api" existed.
+# A literal (non-regex) path has no capture groups to rewrite with, which is
+# why this needs pathType: ImplementationSpecific rather than Prefix — nginx
+# is the implementation that understands the regex, Prefix is a plain
+# string-prefix match in the core API and would treat the parentheses
+# literally.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: lab-api
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "4.2"
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: lab.veloshare.local
+      http:
+        paths:
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: pricing
+                port:
+                  number: 80

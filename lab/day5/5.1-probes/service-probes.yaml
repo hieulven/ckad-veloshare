@@ -1,0 +1,28 @@
+# Lab 5.1 — ClusterIP Service selecting the lab-probes Pod.
+#
+# This Service exists purely to make readiness observable as something more
+# than a status column: `kubectl get endpoints lab-probes` shows <none>
+# while the Pod is NotReady and shows the Pod IP the instant it becomes
+# Ready, with zero Service-side action taken. A Service's Endpoints object
+# is a live view of "which of my selected Pods currently pass their
+# readiness probe" -- that is the whole payoff of a file-based readiness
+# probe you can flip by hand.
+apiVersion: v1
+kind: Service
+metadata:
+  name: lab-probes
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "5.1"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: pricing
+    lab: "5.1"
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000

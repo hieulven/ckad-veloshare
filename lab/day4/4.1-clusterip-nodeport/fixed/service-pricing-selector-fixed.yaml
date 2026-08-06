@@ -1,0 +1,25 @@
+# Lab 4.1 — the fix for broken/service-pricing-selector-mismatch.yaml.
+#
+# Identical to service-pricing-clusterip.yaml at the top level, kept here as
+# its own file so the fix is a single `kubectl apply -f` rather than "go dig
+# up the original file and re-apply it" — the point being that the fix is
+# swapping the selector back to what the Pods actually carry, nothing else.
+apiVersion: v1
+kind: Service
+metadata:
+  name: pricing
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "4.1"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: pricing
+    lab: "4.1"
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000

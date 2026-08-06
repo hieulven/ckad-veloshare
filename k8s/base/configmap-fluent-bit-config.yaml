@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluent-bit-config
+  namespace: veloshare
+  labels:
+    app.kubernetes.io/name: logging
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/part-of: veloshare
+data:
+  parsers.conf: "[PARSER]\n    Name        json\n    Format      json\n    # App logs\
+    \ may emit either \"time\" or \"timestamp\" as the log field\n    # name; Time_Key\
+    \ only accepts one, so \"time\" is the default here \u2014\n    # emit that field\
+    \ name from services for parsed timestamps.\n    Time_Key    time\n    Time_Format\
+    \ %Y-%m-%dT%H:%M:%S.%L%z\n    Time_Keep   On\n"
+  fluent-bit.conf: "[SERVICE]\n    Parsers_File parsers.conf\n    Flush        5\n\
+    \    Log_Level    info\n    Daemon       Off\n\n[INPUT]\n    Name            \
+    \  tail\n    Path              /var/log/veloshare/*.log\n    Parser          \
+    \  json\n    Tag               veloshare.*\n    Refresh_Interval  5\n    Read_from_Head\
+    \    true\n    # Poll via stat instead of inotify. Every sidecar shares the host\n\
+    \    # kernel's inotify instance budget (one kernel for all kind nodes), so\n\
+    \    # inotify watchers exhaust it and the input dies with EMFILE \"Too many\n\
+    \    # open files\" when several pods start at once.\n    Inotify_Watcher   Off\n\
+    # Elasticsearch/Kibana are disabled (global.logging.enabled=false) \u2014 ship\n\
+    # to the log-agent sidecar's own stdout instead, so `kubectl logs <pod> -c\n#\
+    \ log-agent` still shows every app pod's JSON log lines.\n[OUTPUT]\n    Name \
+    \   stdout\n    Match   *\n    Format  json_lines\n"

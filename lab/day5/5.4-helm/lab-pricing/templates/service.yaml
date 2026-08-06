@@ -1,0 +1,18 @@
+# Lab 5.4 — ClusterIP Service in front of the Deployment. No ambassador
+# sidecar in this lab (unlike the real platform chart), so targetPort is
+# always .Values.containerPort.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "lab-pricing.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "lab-pricing.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "lab-pricing.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: {{ .Values.containerPort }}

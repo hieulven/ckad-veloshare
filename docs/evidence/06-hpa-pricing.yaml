@@ -1,0 +1,60 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  annotations:
+    meta.helm.sh/release-name: veloshare
+    meta.helm.sh/release-namespace: veloshare
+  creationTimestamp: "2026-08-05T15:33:07Z"
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/version: 0.1.0
+    helm.sh/chart: pricing-0.1.0
+  name: pricing
+  namespace: veloshare
+  resourceVersion: "86664"
+  uid: 8378abbf-0390-4f33-8eb2-f7e84dd220f4
+spec:
+  maxReplicas: 5
+  metrics:
+  - resource:
+      name: cpu
+      target:
+        averageUtilization: 70
+        type: Utilization
+    type: Resource
+  minReplicas: 1
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: pricing
+status:
+  conditions:
+  - lastTransitionTime: "2026-08-05T23:48:18Z"
+    message: recommended size matches current size
+    reason: ReadyForNewScale
+    status: "True"
+    type: AbleToScale
+  - lastTransitionTime: "2026-08-06T00:42:26Z"
+    message: the HPA was able to successfully calculate a replica count from cpu resource
+      utilization (percentage of request)
+    reason: ValidMetricFound
+    status: "True"
+    type: ScalingActive
+  - lastTransitionTime: "2026-08-05T17:14:54Z"
+    message: the desired count is within the acceptable range
+    reason: DesiredWithinRange
+    status: "False"
+    type: ScalingLimited
+  currentMetrics:
+  - resource:
+      current:
+        averageUtilization: 53
+        averageValue: 24m
+      name: cpu
+    type: Resource
+  currentReplicas: 1
+  desiredReplicas: 1
+  lastScaleTime: "2026-08-06T00:02:49Z"

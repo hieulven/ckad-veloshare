@@ -1,0 +1,84 @@
+# Lab 3.4, rejection case 1 — ResourceQuota, via a Deployment.
+#
+# 4 replicas x 2 CPU requested = 8 CPU, against a namespace ceiling of
+# requests.cpu: 1. Each individual container is legal (2 CPU is exactly the
+# LimitRange max), so the ONLY thing rejecting this is the quota.
+#
+# EXPECTED SYMPTOM — and this is the part that catches people out:
+#
+#   $ kubectl apply -f rejected/deployment-oversized.yaml
+#   deployment.apps/lab-oversized created          <-- SUCCESS
+#
+#   $ kubectl -n veloshare-lab get deploy lab-oversized
+#   NAME            READY   UP-TO-DATE   AVAILABLE
+#   lab-oversized   0/4     0            0          <-- nothing ever comes up
+#
+#   $ kubectl -n veloshare-lab describe rs -l lab=3.4-oversized | tail -5
+#   Warning  FailedCreate  ... Error creating: pods "lab-oversized-..." is
+#   forbidden: exceeded quota: veloshare-lab-quota, requested: requests.cpu=2,
+#   used: requests.cpu=..., limited: requests.cpu=1
+#
+# The Deployment and ReplicaSet are created fine -- quota is enforced when the
+# ReplicaSet controller tries to create PODS. So the error is never on your
+# terminal; it is an event on the ReplicaSet. `kubectl get deploy` showing 0/4
+# with no Pods at all is the signature of a quota (or LimitRange) rejection.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lab-oversized
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "3.4-oversized"
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: pricing
+      lab: "3.4-oversized"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: pricing
+        app.kubernetes.io/part-of: veloshare
+        lab: "3.4-oversized"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: pricing
+          image: veloshare/pricing:0.1.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: logs
+              mountPath: /var/log/veloshare
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              # Legal per-container (LimitRange max is 2), but 4 of these
+              # cannot fit under requests.cpu: 1.
+              cpu: "2"
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 512Mi
+      volumes:
+        - name: logs
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

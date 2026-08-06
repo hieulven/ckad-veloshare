@@ -1,0 +1,40 @@
+# Lab 4.1, counter-example — same Service, wrong selector.
+#
+# `app.kubernetes.io/name: pricing-api` matches no Pod: the Deployment's Pods
+# carry `app.kubernetes.io/name: pricing` (see deployment-pricing.yaml). A
+# Service selector is matched against POD labels at scrape time by the
+# EndpointSlice controller — it has no idea a Deployment named "pricing"
+# exists, or what labels its Pods happen to carry, until they match exactly.
+#
+# EXPECTED SYMPTOM — apply this over service-pricing-clusterip.yaml (same
+# name, so it replaces it) and the Service goes from healthy to empty:
+#
+#   kubectl -n veloshare-lab get endpoints pricing
+#     NAME      ENDPOINTS   AGE
+#     pricing   <none>      3m
+#
+#   kubectl -n veloshare-lab exec deploy/frontend -- wget -qO- http://pricing/healthz
+#     wget: server returned error: HTTP/1.1 502 Bad Gateway
+#
+# The Deployment and its Pods are completely unaffected — `kubectl get pods`
+# still shows 2/2 Running. Nothing crashed; the Service just has nowhere to
+# send traffic. Fix with fixed/service-pricing-selector-fixed.yaml.
+apiVersion: v1
+kind: Service
+metadata:
+  name: pricing
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "4.1"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: pricing-api   # <-- no Pod carries this label
+    lab: "4.1"
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000

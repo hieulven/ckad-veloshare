@@ -1,0 +1,108 @@
+# Lab 5.1 — one pricing container, all three probe types, wired to actually
+# interact with each other so the interaction is the thing you observe, not
+# just the syntax.
+#
+# THE INTERACTION THAT MATTERS:
+#   While a startupProbe is defined and has not yet succeeded, the kubelet
+#   does NOT run livenessProbe or readinessProbe at all -- they are
+#   suspended. Only once startupProbe reports success (here: /healthz
+#   answers 200 before failureThreshold * periodSeconds = 30 * 2s = 60s runs
+#   out) do liveness and readiness start executing on their own schedules.
+#   This is the entire reason startupProbe exists: it lets a slow-starting
+#   container have a generous startup budget (60s here) WITHOUT also making
+#   the steady-state livenessProbe tolerate 60s of unresponsiveness once the
+#   app is actually up. Before startupProbe existed (pre-1.16), the only tool
+#   for a slow starter was a large livenessProbe.initialDelaySeconds, which
+#   is a single fixed number that is wrong in both directions: too short for
+#   startup, too forgiving for steady-state hangs.
+#
+# readinessProbe is deliberately file-based (exec, not httpGet) so it is
+# controlled by hand from outside the app: the pricing container has no
+# endpoint that flips readiness on command, but "does this file exist" is
+# something `kubectl exec` can toggle trivially. The Pod comes up 0/1 and
+# STAYS 0/1 -- Running, but with no Endpoints -- until you
+# `kubectl exec lab-probes -- touch /tmp/ready`. Removing the file again
+# flips it back to NotReady without killing the container, which is the
+# proof that readiness and liveness are different mechanisms (see
+# service-probes.yaml and the README Verify section).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lab-probes
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "5.1"
+spec:
+  securityContext:
+    runAsNonRoot: true
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: pricing
+      image: veloshare/pricing:0.1.0
+      imagePullPolicy: IfNotPresent
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        capabilities:
+          drop:
+            - ALL
+      ports:
+        - name: http
+          containerPort: 8000
+      env:
+        # readOnlyRootFilesystem forces this -- Python would otherwise try to
+        # write .pyc files next to the source under /app.
+        - name: PYTHONDONTWRITEBYTECODE
+          value: "1"
+      volumeMounts:
+        - name: logs
+          mountPath: /var/log/veloshare
+        - name: tmp
+          mountPath: /tmp
+      # 1. Startup: up to 30 * 2s = 60s for the process to answer /healthz
+      #    before it counts as a failed startup and the container is killed
+      #    and restarted. Liveness/readiness are suspended the whole time.
+      startupProbe:
+        httpGet:
+          path: /healthz
+          port: 8000
+        periodSeconds: 2
+        failureThreshold: 30
+      # 2. Liveness: once startup has succeeded, poll every 10s; three misses
+      #    in a row (30s of unresponsiveness) restarts the container. No
+      #    initialDelaySeconds needed -- the startupProbe already covered
+      #    the slow-start window.
+      livenessProbe:
+        httpGet:
+          path: /healthz
+          port: 8000
+        periodSeconds: 10
+        failureThreshold: 3
+      # 3. Readiness: file-based on purpose, so it is under manual control
+      #    for this lab (`touch` / `rm` /tmp/ready via exec) instead of
+      #    tracking the app's real health. `cat` exits non-zero if the file
+      #    is absent, which is all a readiness probe needs -- exit 0 = ready.
+      readinessProbe:
+        exec:
+          command: ["cat", "/tmp/ready"]
+        periodSeconds: 5
+      resources:
+        requests:
+          cpu: 25m
+          memory: 96Mi
+        limits:
+          cpu: 150m
+          memory: 192Mi
+  volumes:
+    - name: logs
+      emptyDir: {}
+    - name: tmp
+      emptyDir: {}

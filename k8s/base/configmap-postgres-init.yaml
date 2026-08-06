@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: veloshare
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/part-of: veloshare
+data:
+  init.sh: "#!/bin/bash\nset -euo pipefail\n\n# schema + owning login role = one isolated\
+    \ tenant of the shared database\ncreate_service_role() {\n  local schema=\"$1\"\
+    \ role=\"$2\" password=\"$3\"\n  psql -v ON_ERROR_STOP=1 --username \"$POSTGRES_USER\"\
+    \ --dbname \"$POSTGRES_DB\" <<EOSQL\nCREATE SCHEMA IF NOT EXISTS ${schema};\n\
+    CREATE ROLE ${role} LOGIN PASSWORD '${password}';\nGRANT USAGE ON SCHEMA ${schema}\
+    \ TO ${role};\nGRANT ALL ON SCHEMA ${schema} TO ${role};\nALTER ROLE ${role} SET\
+    \ search_path = ${schema};\nEOSQL\n}\n\ncreate_service_role riders   rider   \"\
+    ${RIDER_PASSWORD}\"\ncreate_service_role stations station \"${STATION_PASSWORD}\"\
+    \ncreate_service_role trips    trip    \"${TRIP_PASSWORD}\"\n"

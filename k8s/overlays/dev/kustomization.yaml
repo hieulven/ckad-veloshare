@@ -1,0 +1,42 @@
+# Dev overlay -- the laptop-sized default.
+#
+# Matches what `helm upgrade --install` deploys with the chart's default
+# values: one replica per service, and the namespace ResourceQuota sized for
+# exactly that (see k8s/quota/). Applying this overlay and installing the Helm
+# chart produce the same platform; pick ONE path, never both at once (see
+# scripts/deploy.sh, which enforces that).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+commonAnnotations:
+  veloshare.io/environment: dev
+
+replicas:
+  - name: rider
+    count: 1
+  - name: station
+    count: 1
+  - name: trip
+    count: 1
+  - name: pricing
+    count: 1
+  - name: frontend
+    count: 1
+
+# Dev tracks the current release line of pricing: 0.1.0. The prod overlay pins
+# 0.2.0 instead, and both tags are really built and loaded into the cluster
+# (`make images-demo-tag`), so this is a live difference you can prove:
+#
+#   kubectl -n veloshare get deploy pricing -o jsonpath='{..image}'
+#   kubectl -n veloshare exec deploy/pricing -c ambassador -- \
+#       curl -s 127.0.0.1:8080/version
+#
+# The other six services are not pinned here -- they exist at exactly one tag
+# (0.1.0) in the kind cluster, and pinning a tag that was never loaded would
+# render a manifest that cannot pull.
+images:
+  - name: veloshare/pricing
+    newTag: "0.1.0"

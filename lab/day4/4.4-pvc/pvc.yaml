@@ -1,0 +1,32 @@
+# Lab 4.4 — a 1Gi PVC, dynamically provisioned by the cluster's default
+# StorageClass (`standard`, rancher.io/local-path on kind).
+#
+# No `storageClassName` field is required to get this behaviour — omitting
+# it, or setting it to "standard" explicitly (done here for clarity), both
+# resolve to whatever StorageClass carries the
+# `storageclass.kubernetes.io/is-default-class: "true"` annotation.
+#
+# Applying this alone leaves the PVC `Pending`, and that is the expected,
+# correct state, not a bug to chase: `standard`'s `volumeBindingMode` is
+# `WaitForFirstConsumer`, so local-path deliberately delays provisioning
+# until a Pod that mounts this PVC is actually scheduled — only then does it
+# know *which node* to put the PersistentVolume's backing directory on
+# (local-path volumes are node-local, unlike a real network-attached
+# storage backend). `pod-writer.yaml` is what turns this Pending into Bound.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lab-pricing-logs
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "4.4"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: standard
+  resources:
+    requests:
+      storage: 1Gi

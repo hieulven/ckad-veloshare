@@ -89,23 +89,41 @@ and to demonstrate the CKAD rolling-update surface: `kubectl set image`, `rollou
 `rollout undo`, `rollout history`.
 
 **1. Build and load a new, distinct tag** (don't reuse `0.1.0` — that's what makes this a real
-rolling update instead of a same-spec restart):
+rolling update instead of a same-spec restart).
+
+`pricing` already ships this second tag, so these commands run as-is:
 
 ```bash
-docker build -t veloshare/trip:0.2.0 ./trip
-kind load docker-image veloshare/trip:0.2.0 --name veloshare
+make images-demo-tag                      # = TAG=0.2.0 ./scripts/build.sh pricing
+docker images | grep veloshare/pricing    # 0.1.0 and 0.2.0 both present
 ```
 
 **2. Point the Deployment at the new tag and watch the rollout:**
 
 ```bash
-kubectl -n veloshare set image deploy/trip trip=veloshare/trip:0.2.0
-kubectl -n veloshare rollout status deploy/trip
+kubectl -n veloshare set image deploy/pricing pricing=veloshare/pricing:0.2.0
+kubectl -n veloshare rollout status deploy/pricing
 ```
 
 `set image` patches only the named container's `image:` field — this is the actual spec change
 that `rollout restart` never makes. `rollout status` blocks until every new-generation Pod is
 Ready and the old ReplicaSet is scaled to zero (or reports the failure if it can't).
+
+**Confirm the new image is really what's serving.** `pricing` bakes its image tag in at build
+time (`ARG APP_VERSION` in `services/pricing/Dockerfile`) and reports it on `/version`, so this
+cannot be fooled by a stale Pod:
+
+```bash
+kubectl -n veloshare exec deploy/pricing -c ambassador -- curl -s 127.0.0.1:8080/version
+# {"service":"pricing","version":"0.2.0"}
+```
+
+Return to the baseline tag when you're done demonstrating:
+
+```bash
+kubectl -n veloshare set image deploy/pricing pricing=veloshare/pricing:0.1.0
+kubectl -n veloshare rollout status deploy/pricing
+```
 
 **3. Roll back if the new version is bad:**
 

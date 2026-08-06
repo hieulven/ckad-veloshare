@@ -1,0 +1,53 @@
+# Prod overlay -- two replicas per stateless API, and a namespace quota big
+# enough to actually hold them.
+#
+# The interesting part is that replicas and quota MUST move together: the
+# ResourceQuota in k8s/quota/ is sized for the single-replica dev footprint, so
+# doubling the API replicas without raising the quota gets the extra Pods
+# rejected by the quota admission controller, not scheduled-and-pending. That
+# coupling is the whole lesson of this overlay, and it's why the quota patch
+# below is a strategic-merge patch rather than a replicas: entry.
+#
+# postgres and redis stay at one replica on purpose: postgres is a StatefulSet
+# with a single RWO PVC, and this redis is a non-durable cache -- neither
+# becomes highly available just by raising a replica count, and pretending
+# otherwise would be the sort of thing that looks fine in a manifest and falls
+# over in production.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+commonAnnotations:
+  veloshare.io/environment: prod
+
+# Prod pins pricing to 0.2.0 while dev stays on 0.1.0 -- the per-environment
+# image pinning that P5 asks for, on a real service rather than a placeholder.
+# Both tags are genuinely built from services/pricing and loaded into the kind
+# cluster by `make images-demo-tag`; the running Pod reports which one it got:
+#
+#   kubectl -n veloshare exec deploy/pricing -c ambassador -- \
+#       curl -s 127.0.0.1:8080/version   ->  {"service":"pricing","version":"0.2.0"}
+#
+# The version string is baked in at build time from the image tag
+# (services/pricing/Dockerfile ARG APP_VERSION), so a Pod cannot misreport which
+# image it is running.
+images:
+  - name: veloshare/pricing
+    newTag: "0.2.0"
+
+replicas:
+  - name: rider
+    count: 2
+  - name: station
+    count: 2
+  - name: trip
+    count: 2
+  - name: pricing
+    count: 2
+  - name: frontend
+    count: 2
+
+patches:
+  - path: resourcequota-patch.yaml

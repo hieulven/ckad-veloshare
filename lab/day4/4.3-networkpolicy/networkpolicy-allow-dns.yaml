@@ -1,0 +1,34 @@
+# Lab 4.3, step 2 — restore DNS for every Pod the default-deny just cut off.
+#
+# CoreDNS lives in kube-system, outside this namespace, so it needs a
+# namespaceSelector rather than a podSelector. This is the single most
+# common NetworkPolicy mistake in the wild: writing an ingress/egress
+# allow-list for application traffic, forgetting DNS, and then spending the
+# next twenty minutes debugging "connection refused" that is actually
+# "could not resolve pricing.veloshare-lab.svc.cluster.local" one layer
+# below. podSelector: {} here means "applies to every Pod in this
+# namespace" (same as the default-deny), not "matches every namespace" —
+# don't confuse the two empty selectors.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: lab-allow-dns
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "4.3"
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

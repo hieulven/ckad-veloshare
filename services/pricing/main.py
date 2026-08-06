@@ -1,6 +1,7 @@
 """pricing service — stateless fare calculation.
 
 GET  /healthz -> {"status": "ok"}
+GET  /version -> {"service": "pricing", "version": "<image tag>"}
 POST /fare    -> {"cents": <int>}
 """
 
@@ -17,6 +18,11 @@ from pythonjsonlogger import jsonlogger
 
 SERVICE = "pricing"
 LOG_FILE = os.environ.get("LOG_FILE", "/var/log/veloshare/app.log")
+
+# Set by the Dockerfile's ARG/ENV at build time (scripts/build.sh passes the
+# image tag). Not require_env: it is not a secret, and a plain `docker run` of
+# this image outside the cluster should still start rather than fail fast.
+APP_VERSION = os.environ.get("APP_VERSION", "unknown")
 
 # Correlation id for the in-flight request. Callers propagate it via the
 # X-Request-ID header, so one user transaction is traceable across services.
@@ -101,7 +107,15 @@ class TiersResponse(BaseModel):
 
 @app.get("/healthz")
 async def healthz():
+    # Response shape is deliberately NOT extended with the version: probes and
+    # scripts/smoke-test.sh compare this against exactly {"status": "ok"}.
     return {"status": "ok"}
+
+
+@app.get("/version")
+async def version():
+    """Which image this Pod is actually running -- see the Dockerfile's ARG."""
+    return {"service": SERVICE, "version": APP_VERSION}
 
 
 @app.get("/tiers", response_model=TiersResponse)

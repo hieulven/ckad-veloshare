@@ -1,0 +1,76 @@
+apiVersion: v1
+items:
+- apiVersion: networking.k8s.io/v1
+  kind: Ingress
+  metadata:
+    annotations:
+      meta.helm.sh/release-name: veloshare
+      meta.helm.sh/release-namespace: veloshare
+    creationTimestamp: "2026-08-05T17:18:08Z"
+    generation: 1
+    labels:
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: veloshare
+      app.kubernetes.io/part-of: veloshare
+      app.kubernetes.io/version: 0.1.0
+      helm.sh/chart: veloshare-0.1.0
+    name: veloshare
+    namespace: veloshare
+    resourceVersion: "76488"
+    uid: a74d61cb-854c-44c2-a9f8-e121c3309e9b
+  spec:
+    ingressClassName: nginx
+    rules:
+    - http:
+        paths:
+        - backend:
+            service:
+              name: frontend
+              port:
+                number: 80
+          path: /
+          pathType: Prefix
+  status:
+    loadBalancer:
+      ingress:
+      - hostname: localhost
+- apiVersion: networking.k8s.io/v1
+  kind: Ingress
+  metadata:
+    annotations:
+      meta.helm.sh/release-name: veloshare
+      meta.helm.sh/release-namespace: veloshare
+      nginx.ingress.kubernetes.io/rewrite-target: /healthz
+    creationTimestamp: "2026-08-05T17:18:08Z"
+    generation: 1
+    labels:
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: veloshare
+      app.kubernetes.io/part-of: veloshare
+      app.kubernetes.io/version: 0.1.0
+      helm.sh/chart: veloshare-0.1.0
+    name: veloshare-api
+    namespace: veloshare
+    resourceVersion: "76487"
+    uid: ac4e8448-d9a4-44e1-8df6-a7babc512715
+  spec:
+    ingressClassName: nginx
+    rules:
+    - http:
+        paths:
+        - backend:
+            service:
+              name: rider
+              port:
+                number: 80
+          path: /api/healthz
+          pathType: Exact
+  status:
+    loadBalancer:
+      ingress:
+      - hostname: localhost
+kind: List
+metadata:
+  resourceVersion: ""

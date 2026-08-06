@@ -1,0 +1,35 @@
+# Lab 4.2 — routes "/" to the frontend Service created in lab 4.1.
+#
+# host: lab.veloshare.local is mandatory here, not decorative. The real
+# `veloshare` namespace already runs an Ingress with NO host set
+# (helm/veloshare/templates/ingress.yaml, global.ingress.host: "" so it
+# matches ANY Host header) claiming path "/" for its own frontend. ingress-
+# nginx merges rules for the same host+path across Ingress objects/
+# namespaces into one generated nginx config; a second host-less "/" rule
+# from this namespace would collide with that unpredictably. Pinning a host
+# this Ingress owns exclusively is what makes `curl -H 'Host:
+# lab.veloshare.local' ...` deterministic and keeps this lab from touching
+# the live platform's routing at all.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: lab-frontend
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "4.2"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: lab.veloshare.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80

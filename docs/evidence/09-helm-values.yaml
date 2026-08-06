@@ -1,0 +1,798 @@
+COMPUTED VALUES:
+fleet-monitor:
+  fullnameOverride: fleet-monitor
+  global:
+    image:
+      pullPolicy: IfNotPresent
+      registry: veloshare
+      tag: 0.1.0
+    ingress:
+      className: nginx
+      enabled: true
+      host: ""
+    limitRange:
+      default:
+        cpu: 100m
+        memory: 128Mi
+      defaultRequest:
+        cpu: 25m
+        memory: 64Mi
+      enabled: true
+      max:
+        cpu: "2"
+        memory: 1Gi
+      min:
+        cpu: 5m
+        memory: 16Mi
+    logging:
+      enabled: false
+    namespace: veloshare
+    networkPolicy:
+      enabled: true
+    rbacDemo:
+      enabled: true
+      historyLimit: 3
+      resources:
+        limits:
+          cpu: 100m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      schedule: '*/5 * * * *'
+    resourceQuota:
+      enabled: true
+      limits:
+        cpu: "2"
+        memory: 2560Mi
+      pods: "15"
+      requests:
+        cpu: 500m
+        memory: 1200Mi
+  historyTTLSeconds: 86400
+  image:
+    repository: fleet-monitor
+  reports:
+    storage: 100Mi
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 25m
+      memory: 64Mi
+  schedule: 0 0 * * *
+frontend:
+  containerPort: 8080
+  fullnameOverride: frontend
+  global:
+    image:
+      pullPolicy: IfNotPresent
+      registry: veloshare
+      tag: 0.1.0
+    ingress:
+      className: nginx
+      enabled: true
+      host: ""
+    limitRange:
+      default:
+        cpu: 100m
+        memory: 128Mi
+      defaultRequest:
+        cpu: 25m
+        memory: 64Mi
+      enabled: true
+      max:
+        cpu: "2"
+        memory: 1Gi
+      min:
+        cpu: 5m
+        memory: 16Mi
+    logging:
+      enabled: false
+    namespace: veloshare
+    networkPolicy:
+      enabled: true
+    rbacDemo:
+      enabled: true
+      historyLimit: 3
+      resources:
+        limits:
+          cpu: 100m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      schedule: '*/5 * * * *'
+    resourceQuota:
+      enabled: true
+      limits:
+        cpu: "2"
+        memory: 2560Mi
+      pods: "15"
+      requests:
+        cpu: 500m
+        memory: 1200Mi
+  image:
+    repository: frontend
+  replicaCount: 1
+  resources:
+    limits:
+      cpu: 50m
+      memory: 64Mi
+    requests:
+      cpu: 10m
+      memory: 32Mi
+  service:
+    nodePort: ""
+    port: 80
+global:
+  image:
+    pullPolicy: IfNotPresent
+    registry: veloshare
+    tag: 0.1.0
+  ingress:
+    className: nginx
+    enabled: true
+    host: ""
+  limitRange:
+    default:
+      cpu: 100m
+      memory: 128Mi
+    defaultRequest:
+      cpu: 25m
+      memory: 64Mi
+    enabled: true
+    max:
+      cpu: "2"
+      memory: 1Gi
+    min:
+      cpu: 5m
+      memory: 16Mi
+  logging:
+    enabled: false
+  namespace: veloshare
+  networkPolicy:
+    enabled: true
+  rbacDemo:
+    enabled: true
+    historyLimit: 3
+    resources:
+      limits:
+        cpu: 100m
+        memory: 64Mi
+      requests:
+        cpu: 10m
+        memory: 32Mi
+    schedule: '*/5 * * * *'
+  resourceQuota:
+    enabled: true
+    limits:
+      cpu: "2"
+      memory: 2560Mi
+    pods: "15"
+    requests:
+      cpu: 500m
+      memory: 1200Mi
+logging:
+  elasticsearch:
+    heap: -Xms100m -Xmx100m
+    image:
+      repository: docker.elastic.co/elasticsearch/elasticsearch
+      tag: 8.15.3
+    resources:
+      limits:
+        cpu: "1"
+        memory: 320Mi
+      requests:
+        cpu: 250m
+        memory: 200Mi
+    storage: 2Gi
+  fullnameOverride: logging
+  global:
+    image:
+      pullPolicy: IfNotPresent
+      registry: veloshare
+      tag: 0.1.0
+    ingress:
+      className: nginx
+      enabled: true
+      host: ""
+    limitRange:
+      default:
+        cpu: 100m
+        memory: 128Mi
+      defaultRequest:
+        cpu: 25m
+        memory: 64Mi
+      enabled: true
+      max:
+        cpu: "2"
+        memory: 1Gi
+      min:
+        cpu: 5m
+        memory: 16Mi
+    logging:
+      enabled: false
+    namespace: veloshare
+    networkPolicy:
+      enabled: true
+    rbacDemo:
+      enabled: true
+      historyLimit: 3
+      resources:
+        limits:
+          cpu: 100m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      schedule: '*/5 * * * *'
+    resourceQuota:
+      enabled: true
+      limits:
+        cpu: "2"
+        memory: 2560Mi
+      pods: "15"
+      requests:
+        cpu: 500m
+        memory: 1200Mi
+  kibana:
+    basePath: /kibana
+    image:
+      repository: docker.elastic.co/kibana/kibana
+      tag: 8.15.3
+    resources:
+      limits:
+        cpu: 500m
+        memory: 320Mi
+      requests:
+        cpu: 100m
+        memory: 200Mi
+postgres:
+  containerPort: 5432
+  fullnameOverride: postgres
+  global:
+    image:
+      pullPolicy: IfNotPresent
+      registry: veloshare
+      tag: 0.1.0
+    ingress:
+      className: nginx
+      enabled: true
+      host: ""
+    limitRange:
+      default:
+        cpu: 100m
+        memory: 128Mi
+      defaultRequest:
+        cpu: 25m
+        memory: 64Mi
+      enabled: true
+      max:
+        cpu: "2"
+        memory: 1Gi
+      min:
+        cpu: 5m
+        memory: 16Mi
+    logging:
+      enabled: false
+    namespace: veloshare
+    networkPolicy:
+      enabled: true
+    rbacDemo:
+      enabled: true
+      historyLimit: 3
+      resources:
+        limits:
+          cpu: 100m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      schedule: '*/5 * * * *'
+    resourceQuota:
+      enabled: true
+      limits:
+        cpu: "2"
+        memory: 2560Mi
+      pods: "15"
+      requests:
+        cpu: 500m
+        memory: 1200Mi
+  image:
+    repository: postgres
+    tag: "16"
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 192Mi
+  storage: 1Gi
+pricing:
+  ambassador:
+    enabled: true
+    port: 8080
+    resources:
+      limits:
+        cpu: 50m
+        memory: 64Mi
+      requests:
+        cpu: 10m
+        memory: 32Mi
+  autoscaling:
+    enabled: true
+    maxReplicas: 5
+    minReplicas: 1
+    targetCPUUtilizationPercentage: 70
+  configCheck:
+    enabled: true
+    envFrom:
+    - configMapRef:
+        name: pricing
+    requiredVars: []
+    resources:
+      limits:
+        cpu: 50m
+        memory: 64Mi
+      requests:
+        cpu: 10m
+        memory: 32Mi
+  containerPort: 8000
+  fare:
+    tierRatesJson: '{"standard": 15, "member": 8, "day_pass": 5}'
+    unlockFeeCents: 100
+  fullnameOverride: pricing
+  global:
+    image:
+      pullPolicy: IfNotPresent
+      registry: veloshare
+      tag: 0.1.0
+    ingress:
+      className: nginx
+      enabled: true
+      host: ""
+    limitRange:
+      default:
+        cpu: 100m
+        memory: 128Mi
+      defaultRequest:
+        cpu: 25m
+        memory: 64Mi
+      enabled: true
+      max:
+        cpu: "2"
+        memory: 1Gi
+      min:
+        cpu: 5m
+        memory: 16Mi
+    logging:
+      enabled: false
+    namespace: veloshare
+    networkPolicy:
+      enabled: true
+    rbacDemo:
+      enabled: true
+      historyLimit: 3
+      resources:
+        limits:
+          cpu: 100m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      schedule: '*/5 * * * *'
+    resourceQuota:
+      enabled: true
+      limits:
+        cpu: "2"
+        memory: 2560Mi
+      pods: "15"
+      requests:
+        cpu: 500m
+        memory: 1200Mi
+  image:
+    repository: pricing
+  initCheck:
+    dbHost: postgres
+    dbPort: 5432
+    enabled: true
+    image: postgres:16
+    resources:
+      limits:
+        cpu: 100m
+        memory: 128Mi
+      requests:
+        cpu: 25m
+        memory: 64Mi
+    riderHost: rider
+    riderPort: 80
+  logging:
+    enabled: true
+  probePath: /healthz
+  replicaCount: 1
+  resources:
+    limits:
+      cpu: 150m
+      memory: 192Mi
+    requests:
+      cpu: 25m
+      memory: 96Mi
+  service:
+    port: 80
+redis:
+  containerPort: 6379
+  fullnameOverride: redis
+  global:
+    image:
+      pullPolicy: IfNotPresent
+      registry: veloshare
+      tag: 0.1.0
+    ingress:
+      className: nginx
+      enabled: true
+      host: ""
+    limitRange:
+      default:
+        cpu: 100m
+        memory: 128Mi
+      defaultRequest:
+        cpu: 25m
+        memory: 64Mi
+      enabled: true
+      max:
+        cpu: "2"
+        memory: 1Gi
+      min:
+        cpu: 5m
+        memory: 16Mi
+    logging:
+      enabled: false
+    namespace: veloshare
+    networkPolicy:
+      enabled: true
+    rbacDemo:
+      enabled: true
+      historyLimit: 3
+      resources:
+        limits:
+          cpu: 100m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      schedule: '*/5 * * * *'
+    resourceQuota:
+      enabled: true
+      limits:
+        cpu: "2"
+        memory: 2560Mi
+      pods: "15"
+      requests:
+        cpu: 500m
+        memory: 1200Mi
+  image:
+    repository: redis
+    tag: 7-alpine
+  replicaCount: 1
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 25m
+      memory: 64Mi
+  service:
+    port: 6379
+rider:
+  ambassador:
+    enabled: true
+    port: 8080
+    resources:
+      limits:
+        cpu: 50m
+        memory: 64Mi
+      requests:
+        cpu: 10m
+        memory: 32Mi
+  configCheck:
+    enabled: true
+    envFrom:
+    - secretRef:
+        name: rider-db
+    - secretRef:
+        name: veloshare-auth
+    requiredVars:
+    - DB_PASSWORD
+    - JWT_SECRET
+    - ADMIN_EMAIL
+    - ADMIN_PASSWORD
+    resources:
+      limits:
+        cpu: 50m
+        memory: 64Mi
+      requests:
+        cpu: 10m
+        memory: 32Mi
+  containerPort: 8000
+  fullnameOverride: rider
+  global:
+    image:
+      pullPolicy: IfNotPresent
+      registry: veloshare
+      tag: 0.1.0
+    ingress:
+      className: nginx
+      enabled: true
+      host: ""
+    limitRange:
+      default:
+        cpu: 100m
+        memory: 128Mi
+      defaultRequest:
+        cpu: 25m
+        memory: 64Mi
+      enabled: true
+      max:
+        cpu: "2"
+        memory: 1Gi
+      min:
+        cpu: 5m
+        memory: 16Mi
+    logging:
+      enabled: false
+    namespace: veloshare
+    networkPolicy:
+      enabled: true
+    rbacDemo:
+      enabled: true
+      historyLimit: 3
+      resources:
+        limits:
+          cpu: 100m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      schedule: '*/5 * * * *'
+    resourceQuota:
+      enabled: true
+      limits:
+        cpu: "2"
+        memory: 2560Mi
+      pods: "15"
+      requests:
+        cpu: 500m
+        memory: 1200Mi
+  image:
+    repository: rider
+  logging:
+    enabled: true
+  migrate:
+    resources:
+      limits:
+        cpu: 200m
+        memory: 128Mi
+      requests:
+        cpu: 25m
+        memory: 64Mi
+  probePath: /healthz
+  replicaCount: 1
+  resources:
+    limits:
+      cpu: 150m
+      memory: 192Mi
+    requests:
+      cpu: 25m
+      memory: 96Mi
+  service:
+    port: 80
+station:
+  ambassador:
+    enabled: true
+    port: 8080
+    resources:
+      limits:
+        cpu: 50m
+        memory: 64Mi
+      requests:
+        cpu: 10m
+        memory: 32Mi
+  configCheck:
+    enabled: true
+    envFrom:
+    - secretRef:
+        name: station-db
+    requiredVars:
+    - DB_PASSWORD
+    resources:
+      limits:
+        cpu: 50m
+        memory: 64Mi
+      requests:
+        cpu: 10m
+        memory: 32Mi
+  containerPort: 8000
+  fullnameOverride: station
+  global:
+    image:
+      pullPolicy: IfNotPresent
+      registry: veloshare
+      tag: 0.1.0
+    ingress:
+      className: nginx
+      enabled: true
+      host: ""
+    limitRange:
+      default:
+        cpu: 100m
+        memory: 128Mi
+      defaultRequest:
+        cpu: 25m
+        memory: 64Mi
+      enabled: true
+      max:
+        cpu: "2"
+        memory: 1Gi
+      min:
+        cpu: 5m
+        memory: 16Mi
+    logging:
+      enabled: false
+    namespace: veloshare
+    networkPolicy:
+      enabled: true
+    rbacDemo:
+      enabled: true
+      historyLimit: 3
+      resources:
+        limits:
+          cpu: 100m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      schedule: '*/5 * * * *'
+    resourceQuota:
+      enabled: true
+      limits:
+        cpu: "2"
+        memory: 2560Mi
+      pods: "15"
+      requests:
+        cpu: 500m
+        memory: 1200Mi
+  image:
+    repository: station
+  logging:
+    enabled: true
+  migrate:
+    resources:
+      limits:
+        cpu: 200m
+        memory: 128Mi
+      requests:
+        cpu: 25m
+        memory: 64Mi
+  probePath: /healthz
+  replicaCount: 1
+  resources:
+    limits:
+      cpu: 150m
+      memory: 192Mi
+    requests:
+      cpu: 25m
+      memory: 96Mi
+  service:
+    port: 80
+trip:
+  ambassador:
+    enabled: true
+    port: 8080
+    resources:
+      limits:
+        cpu: 50m
+        memory: 64Mi
+      requests:
+        cpu: 10m
+        memory: 32Mi
+  configCheck:
+    enabled: true
+    envFrom:
+    - secretRef:
+        name: trip-db
+    - configMapRef:
+        name: trip
+    - secretRef:
+        name: veloshare-auth
+    requiredVars:
+    - DB_PASSWORD
+    - JWT_SECRET
+    resources:
+      limits:
+        cpu: 50m
+        memory: 64Mi
+      requests:
+        cpu: 10m
+        memory: 32Mi
+  containerPort: 8000
+  deps:
+    activeTtlSeconds: 7200
+    pricingUrl: http://pricing.veloshare.svc.cluster.local
+    redisHost: redis
+    redisPort: 6379
+    riderUrl: http://rider.veloshare.svc.cluster.local
+  fullnameOverride: trip
+  global:
+    image:
+      pullPolicy: IfNotPresent
+      registry: veloshare
+      tag: 0.1.0
+    ingress:
+      className: nginx
+      enabled: true
+      host: ""
+    limitRange:
+      default:
+        cpu: 100m
+        memory: 128Mi
+      defaultRequest:
+        cpu: 25m
+        memory: 64Mi
+      enabled: true
+      max:
+        cpu: "2"
+        memory: 1Gi
+      min:
+        cpu: 5m
+        memory: 16Mi
+    logging:
+      enabled: false
+    namespace: veloshare
+    networkPolicy:
+      enabled: true
+    rbacDemo:
+      enabled: true
+      historyLimit: 3
+      resources:
+        limits:
+          cpu: 100m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      schedule: '*/5 * * * *'
+    resourceQuota:
+      enabled: true
+      limits:
+        cpu: "2"
+        memory: 2560Mi
+      pods: "15"
+      requests:
+        cpu: 500m
+        memory: 1200Mi
+  image:
+    repository: trip
+  logging:
+    enabled: true
+  migrate:
+    resources:
+      limits:
+        cpu: 200m
+        memory: 128Mi
+      requests:
+        cpu: 25m
+        memory: 64Mi
+  probePath: /healthz
+  replicaCount: 1
+  resources:
+    limits:
+      cpu: 150m
+      memory: 192Mi
+    requests:
+      cpu: 25m
+      memory: 96Mi
+  service:
+    port: 80

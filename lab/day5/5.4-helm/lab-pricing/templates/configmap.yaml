@@ -1,0 +1,14 @@
+# Lab 5.4 — the ConfigMap the pricing container reads its fare config from.
+# Its content is also hashed into the Deployment's checksum/config Pod
+# annotation (see deployment.yaml) -- that is the mechanism that makes an
+# upgrade which only touches these two values actually restart the Pods.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "lab-pricing.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "lab-pricing.labels" . | nindent 4 }}
+data:
+  PRICING_UNLOCK_FEE_CENTS: {{ .Values.fare.unlockFeeCents | quote }}
+  PRICING_TIER_RATES: {{ .Values.fare.tierRatesJson | quote }}

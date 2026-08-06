@@ -1,0 +1,151 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  annotations:
+    meta.helm.sh/release-name: veloshare
+    meta.helm.sh/release-namespace: veloshare
+  creationTimestamp: "2026-08-05T15:33:07Z"
+  generation: 1
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/version: 0.1.0
+    helm.sh/chart: postgres-0.1.0
+  name: postgres
+  namespace: veloshare
+  resourceVersion: "79404"
+  uid: 46b7f2b2-fbc2-481c-9f7c-bd3951a15f75
+spec:
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  podManagementPolicy: OrderedReady
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/name: postgres
+  serviceName: postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: veloshare
+        app.kubernetes.io/name: postgres
+    spec:
+      containers:
+      - env:
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        envFrom:
+        - secretRef:
+            name: postgres
+        image: postgres:16
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - postgres
+            - -d
+            - veloshare
+          failureThreshold: 3
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 3
+        name: postgres
+        ports:
+        - containerPort: 5432
+          name: postgres
+          protocol: TCP
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - postgres
+            - -d
+            - veloshare
+          failureThreshold: 3
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 3
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 192Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 999
+          runAsNonRoot: true
+          runAsUser: 999
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /var/lib/postgresql/data
+          name: data
+        - mountPath: /docker-entrypoint-initdb.d
+          name: init-sql
+          readOnly: true
+        - mountPath: /var/run/postgresql
+          name: run
+        - mountPath: /tmp
+          name: tmp
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext:
+        fsGroup: 999
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - configMap:
+          defaultMode: 493
+          name: postgres-init
+        name: init-sql
+      - emptyDir: {}
+        name: run
+      - emptyDir: {}
+        name: tmp
+  updateStrategy:
+    rollingUpdate:
+      partition: 0
+    type: RollingUpdate
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 1Gi
+      volumeMode: Filesystem
+    status:
+      phase: Pending
+status:
+  availableReplicas: 1
+  collisionCount: 0
+  currentReplicas: 1
+  currentRevision: postgres-99bc5f58f
+  observedGeneration: 1
+  readyReplicas: 1
+  replicas: 1
+  updateRevision: postgres-99bc5f58f
+  updatedReplicas: 1

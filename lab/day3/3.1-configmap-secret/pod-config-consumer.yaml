@@ -1,0 +1,98 @@
+# Lab 3.1 — one Pod consuming a Secret as env vars AND a ConfigMap as a volume.
+#
+# The Secret (lab-pricing-creds) and ConfigMap (lab-pricing-config) are created
+# imperatively by run-lab.sh before this is applied:
+#   secret    <- kubectl create secret generic --from-file=credentials/
+#   configmap <- kubectl create configmap --from-literal=...
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lab-config-consumer
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "3.1"
+spec:
+  securityContext:
+    runAsNonRoot: true
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: pricing
+      image: veloshare/pricing:0.1.0
+      imagePullPolicy: IfNotPresent
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        capabilities:
+          drop:
+            - ALL
+      ports:
+        - name: http
+          containerPort: 8000
+      envFrom:
+        # Injection style 1: Secret -> environment variables.
+        # One env var per Secret key: DB_PASSWORD, JWT_SECRET.
+        #
+        # The key names are why the source files in credentials/ are named
+        # DB_PASSWORD and JWT_SECRET rather than db-password / jwt-secret:
+        # --from-file takes the KEY FROM THE FILENAME, and envFrom silently
+        # SKIPS any key that is not a valid shell identifier. A hyphen is legal
+        # in a Secret key and illegal in an env var name, so `db-password`
+        # would produce a Pod that starts happily with the variable simply
+        # absent. See the exam notes in this lab's README.
+        - secretRef:
+            name: lab-pricing-creds
+        # The ConfigMap is ALSO injected as env, on top of the volume mount
+        # below. This is what makes GET /tiers return the lab's numbers instead
+        # of the defaults baked into services/pricing/main.py — i.e. it makes the
+        # injection observable rather than merely present.
+        - configMapRef:
+            name: lab-pricing-config
+      volumeMounts:
+        # Injection style 2: ConfigMap -> mounted volume.
+        # Each key becomes a file; the file's contents are the value.
+        - name: pricing-config
+          mountPath: /etc/veloshare/config
+          readOnly: true
+        # pricing writes its JSON log here; readOnlyRootFilesystem means it
+        # needs a writable volume for it (and for Python's scratch space).
+        - name: logs
+          mountPath: /var/log/veloshare
+        - name: tmp
+          mountPath: /tmp
+      livenessProbe:
+        httpGet:
+          path: /healthz
+          port: 8000
+        initialDelaySeconds: 5
+        periodSeconds: 10
+      readinessProbe:
+        httpGet:
+          path: /healthz
+          port: 8000
+        initialDelaySeconds: 5
+        periodSeconds: 10
+      # Declared on every lab container: the ResourceQuota applied in lab 3.4
+      # rejects any Pod without them, and this Pod may still be running by then.
+      resources:
+        requests:
+          cpu: 25m
+          memory: 96Mi
+        limits:
+          cpu: 150m
+          memory: 192Mi
+  volumes:
+    - name: pricing-config
+      configMap:
+        name: lab-pricing-config
+    - name: logs
+      emptyDir: {}
+    - name: tmp
+      emptyDir: {}

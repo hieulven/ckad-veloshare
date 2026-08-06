@@ -1,0 +1,31 @@
+# Lab 4.3, step 1 — deny everything in this namespace, in both directions.
+#
+# An empty podSelector {} matches every Pod in `veloshare-lab`; listing both
+# Ingress and Egress in policyTypes with no ingress/egress rules means "this
+# policy selects every Pod, and permits nothing for the directions listed."
+# NetworkPolicy is purely additive/allow-list (see Exam notes) — the moment
+# any policy selects a Pod for a direction, that direction goes from
+# "wide open" (the default with zero policies) to "everything not
+# explicitly allowed is dropped." This one file flips the whole namespace
+# to deny-all, including DNS to kube-system and pricing's own egress to
+# nowhere-in-particular, which is deliberate: it forces the next two files
+# to exist rather than silently working by accident.
+#
+# Same idea as the platform's own default posture — see
+# k8s/network/networkpolicy-backend-isolation.yaml, which allow-lists
+# ingress-nginx + frontend + the four backend services for the `veloshare`
+# namespace's app pods rather than leaving them open to anything in-cluster.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: lab-default-deny
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "4.3"
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress

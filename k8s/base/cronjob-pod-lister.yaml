@@ -1,0 +1,58 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pod-lister
+  namespace: veloshare
+  labels:
+    app.kubernetes.io/name: veloshare
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: rbac-demo
+spec:
+  schedule: '*/5 * * * *'
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: veloshare
+            app.kubernetes.io/instance: veloshare
+            app.kubernetes.io/component: rbac-demo
+        spec:
+          restartPolicy: Never
+          serviceAccountName: pod-lister
+          automountServiceAccountToken: true
+          securityContext:
+            runAsNonRoot: true
+            fsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+          - name: pod-lister
+            image: veloshare/pod-lister:0.1.0
+            imagePullPolicy: IfNotPresent
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 10001
+              runAsGroup: 10001
+              capabilities:
+                drop:
+                - ALL
+            volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            resources:
+              limits:
+                cpu: 100m
+                memory: 64Mi
+              requests:
+                cpu: 10m
+                memory: 32Mi
+          volumes:
+          - name: tmp
+            emptyDir: {}

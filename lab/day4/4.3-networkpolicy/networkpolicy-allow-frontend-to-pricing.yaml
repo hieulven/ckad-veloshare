@@ -1,0 +1,74 @@
+# Lab 4.3, step 3 — the one path this lab exists to prove: frontend can
+# reach pricing, nothing else can.
+#
+# Two NetworkPolicy objects, because NetworkPolicy ingress/egress rules are
+# each scoped to the Pod(s) selected by THEIR OWN podSelector, not to both
+# ends of a conversation at once — there is no single "connection" object.
+# Allowing frontend -> pricing needs an INGRESS rule on pricing's policy
+# (who may talk to pricing) and, separately, an EGRESS rule on frontend's
+# policy (who pricing... no, who frontend may talk to). Miss either half and
+# the traffic still drops even though "the other side" looks correctly
+# configured — a frequent source of exam confusion.
+#
+# Port 8000 here (not 80): NetworkPolicy filters the actual Pod port traffic
+# arrives on, same number as containerPort in deployment-pricing.yaml. The
+# Service's port 80 is irrelevant to NetworkPolicy — the Service only
+# rewrites the destination IP, kube-proxy still delivers the packet to
+# 8000 on the Pod.
+#
+# The ingress-nginx namespace peer on pricing's policy is what keeps lab
+# 4.2's `/api` Ingress path working: that route sends the ingress
+# controller's own Pods directly to pricing on 8000, bypassing frontend
+# entirely, so pricing needs to independently allow that namespace too.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: lab-allow-frontend-to-pricing
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "4.3"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: pricing
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: frontend
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: lab-allow-frontend-egress-to-pricing
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "4.3"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: frontend
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: pricing
+      ports:
+        - protocol: TCP
+          port: 8000

@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trip
+  namespace: veloshare
+  labels:
+    app.kubernetes.io/name: trip
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/part-of: veloshare
+data:
+  PRICING_URL: http://pricing.veloshare.svc.cluster.local
+  RIDER_URL: http://rider.veloshare.svc.cluster.local
+  REDIS_HOST: redis
+  REDIS_PORT: '6379'
+  ACTIVE_TTL_SECONDS: '7200'

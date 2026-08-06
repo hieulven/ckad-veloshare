@@ -129,7 +129,7 @@ namespace) — there is no gRPC and no service mesh.
 - `trip` -> `pricing`: `POST /fare` `{minutes, tier, surge}` -> `{cents}` — called when a trip
   ends. URL from `PRICING_URL` (default `http://pricing.veloshare.svc.cluster.local`).
 - `frontend` -> `pricing`/`rider`/`station`/`trip`: the browser only ever calls the frontend's own
-  origin; frontend's nginx (`frontend/nginx.conf`) reverse-proxies `/api/pricing/*`,
+  origin; frontend's nginx (`services/frontend/nginx.conf`) reverse-proxies `/api/pricing/*`,
   `/api/riders/*`, `/api/stations/*`, `/api/trips/*` to the matching backend Service. Same-origin
   from the browser's point of view, so there is no CORS to configure.
 - Every synchronous call is a **request/response** — the caller blocks and the trip's HTTP

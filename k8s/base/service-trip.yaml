@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: trip
+  namespace: veloshare
+  labels:
+    app.kubernetes.io/name: trip
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/part-of: veloshare
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: trip
+    app.kubernetes.io/instance: veloshare
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080

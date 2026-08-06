@@ -1,0 +1,80 @@
+# Lab 4.4 — a bare Pod (no Deployment) mounting lab-pricing-logs at
+# /var/log/veloshare, which is exactly where the pricing image writes its
+# real JSON log file (`LOG_FILE` default, services/pricing/main.py:20). That
+# makes the persistence demo use the service's own genuine data — hit
+# /healthz a few times to generate log lines, not a synthetic file written
+# by hand — while still being a completely ordinary CKAD "write, delete,
+# recreate, verify" PVC exercise.
+#
+# No Deployment on purpose: deleting this Pod does not trigger any
+# controller to recreate it. "Delete the Pod, re-apply this file" is a real,
+# explicit step you take, which is the point — a ReplicaSet would race to
+# replace it before you could look at the empty state in between.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lab-pvc-writer
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "4.4"
+spec:
+  securityContext:
+    runAsNonRoot: true
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: pricing
+      image: veloshare/pricing:0.1.0
+      imagePullPolicy: IfNotPresent
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        capabilities:
+          drop:
+            - ALL
+      ports:
+        - name: http
+          containerPort: 8000
+      env:
+        - name: PYTHONDONTWRITEBYTECODE
+          value: "1"
+      volumeMounts:
+        # The PVC, not an emptyDir — this is the volume the whole lab is
+        # about. Everything pricing writes to /var/log/veloshare (its JSON
+        # app log) now lands on durable, dynamically-provisioned storage.
+        - name: logs
+          mountPath: /var/log/veloshare
+        - name: tmp
+          mountPath: /tmp
+      livenessProbe:
+        httpGet:
+          path: /healthz
+          port: 8000
+        initialDelaySeconds: 5
+        periodSeconds: 10
+      readinessProbe:
+        httpGet:
+          path: /healthz
+          port: 8000
+        initialDelaySeconds: 5
+        periodSeconds: 10
+      resources:
+        requests:
+          cpu: 25m
+          memory: 96Mi
+        limits:
+          cpu: 150m
+          memory: 192Mi
+  volumes:
+    - name: logs
+      persistentVolumeClaim:
+        claimName: lab-pricing-logs
+    - name: tmp
+      emptyDir: {}

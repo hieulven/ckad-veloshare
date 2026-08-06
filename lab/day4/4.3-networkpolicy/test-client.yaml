@@ -1,0 +1,55 @@
+# Lab 4.3 — an unauthorised client, used to prove the isolation is real.
+#
+# Reuses the pricing image (it already has Python and no curl/wget baggage
+# to install) purely as a shell + Python runtime, overriding its entrypoint
+# with `sleep 3600` instead of starting uvicorn. Labelled
+# app.kubernetes.io/name: netpol-client — deliberately NOT "frontend" — so
+# it matches none of the `from:` peers in
+# networkpolicy-allow-frontend-to-pricing.yaml and gets exactly the
+# default-deny treatment every other unlisted Pod in the namespace gets.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lab-netpol-client
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: netpol-client
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "4.3"
+spec:
+  securityContext:
+    runAsNonRoot: true
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: netpol-client
+      image: veloshare/pricing:0.1.0
+      imagePullPolicy: IfNotPresent
+      command: ["sleep", "3600"]
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        capabilities:
+          drop:
+            - ALL
+      env:
+        - name: PYTHONDONTWRITEBYTECODE
+          value: "1"
+      volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      resources:
+        requests:
+          cpu: 25m
+          memory: 96Mi
+        limits:
+          cpu: 150m
+          memory: 192Mi
+  volumes:
+    - name: tmp
+      emptyDir: {}

@@ -1,0 +1,96 @@
+# Lab 5.4 — the Deployment.
+#
+# checksum/config: this is the single most useful Helm idiom in this chart.
+# A ConfigMap change alone does NOT restart Pods -- envFrom env vars are
+# resolved once at container start, and Kubernetes has no built-in
+# "restart when this ConfigMap changes" behaviour. `helm upgrade` only
+# triggers a rollout when the Pod TEMPLATE itself changes (image, env,
+# labels, annotations, ...), so without this annotation, `--set
+# fare.unlockFeeCents=375` would update the ConfigMap object but the
+# already-running Pod would go on serving the OLD value forever, and
+# `helm upgrade` would report success while nothing observable changed.
+# Hashing the rendered ConfigMap into a Pod-template annotation makes the
+# annotation's value change whenever the ConfigMap's content changes, which
+# IS a template change, which IS what triggers a real rollout.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "lab-pricing.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "lab-pricing.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "lab-pricing.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "lab-pricing.labels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: pricing
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            # Explicit and NOT optional, even though the image already has a
+            # non-root USER. services/pricing/Dockerfile says `USER appuser` --
+            # a name. The kubelet resolves runAsNonRoot before the image's
+            # /etc/passwd is available to it, so a NAMED user cannot be verified
+            # and every container fails with:
+            #   container has runAsNonRoot and image has non-numeric user
+            #   (appuser), cannot verify user is non-root
+            # A numeric runAsUser is what makes the check satisfiable. The
+            # umbrella chart does the same thing -- see the runAsUser argument
+            # to veloshare.containerSecurityContext in _helpers.tpl.
+            runAsUser: 10001
+            runAsGroup: 10001
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: http
+              containerPort: {{ .Values.containerPort }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "lab-pricing.fullname" . }}
+          env:
+            # readOnlyRootFilesystem forces this -- Python would otherwise
+            # try to write .pyc files next to the source under /app.
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          volumeMounts:
+            - name: logs
+              mountPath: /var/log/veloshare
+            - name: tmp
+              mountPath: /tmp
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.containerPort }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.containerPort }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: logs
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

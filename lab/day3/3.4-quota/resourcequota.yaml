@@ -1,0 +1,33 @@
+# Lab 3.4 — namespace-wide ceiling.
+#
+# Sized to fit everything the other 11 labs create, with enough headroom that a
+# normal run never trips it, but low enough that rejected/deployment-oversized.yaml
+# (4 replicas x 2 CPU = 8 CPU requested) blows straight through it.
+#
+# The platform's own quota is the same idea at production sizing:
+# k8s/quota/resourcequota-veloshare-quota.yaml (500m/1200Mi requested), which is
+# deliberately too small for Elasticsearch+Kibana — see CLAUDE.md "Logging".
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: veloshare-lab-quota
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "3.4"
+spec:
+  hard:
+    # Compute. Note requests and limits are counted SEPARATELY.
+    requests.cpu: "1"
+    requests.memory: 2Gi
+    limits.cpu: "4"
+    limits.memory: 4Gi
+    # Object counts. These stop a runaway loop from filling the namespace even
+    # when each individual object is small.
+    pods: "25"
+    persistentvolumeclaims: "4"
+    services: "10"
+    # The count/<resource>.<group> form works for any resource type.
+    count/deployments.apps: "10"
+    count/jobs.batch: "10"

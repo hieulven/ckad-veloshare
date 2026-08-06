@@ -1,0 +1,34 @@
+# Lab 4.1 — ClusterIP Service in front of the pricing Deployment.
+#
+# Named exactly "pricing", not "lab-pricing" or similar, because the frontend
+# image's baked-in nginx.conf (services/frontend/nginx.conf) already contains
+# `proxy_pass http://pricing/;` for its /api/pricing/ location — that DNS name
+# is fixed at image build time, not something this lab controls. Naming the
+# Service anything else would mean editing/rebuilding the frontend image just
+# for this lab, which defeats the "use the project's own images unmodified"
+# rule. In-cluster DNS resolves this to
+# pricing.veloshare-lab.svc.cluster.local from any pod in the namespace.
+#
+# port 80 is what clients (frontend, other pods, this lab's exec commands)
+# talk to; targetPort 8000 is where the pricing container actually listens
+# (services/pricing/Dockerfile EXPOSE 8000). Those two numbers are
+# deliberately different so the exam habit of checking both is exercised.
+apiVersion: v1
+kind: Service
+metadata:
+  name: pricing
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "4.1"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: pricing
+    lab: "4.1"
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000

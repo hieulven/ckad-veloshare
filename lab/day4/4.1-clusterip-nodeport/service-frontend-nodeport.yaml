@@ -1,0 +1,30 @@
+# Lab 4.1 — NodePort Service for the frontend. This is the "reach it from
+# outside the cluster without an Ingress" half of the objective; lab 4.2
+# layers Ingress routing on top of the same Deployments/Services.
+#
+# nodePort is pinned explicitly rather than left to the 30000-32767
+# auto-allocation range so the Verify section can give a fixed URL. 30080 is
+# the conventional first pick in most CKAD material and may already be bound
+# by another demo/lab on this cluster (kind maps host ports 80/443 to the
+# ingress controller, not to NodePorts, so that's not the conflict — it's
+# more likely another Service already claimed it), hence 30081 here.
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "4.1"
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: frontend
+    lab: "4.1"
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      nodePort: 30081

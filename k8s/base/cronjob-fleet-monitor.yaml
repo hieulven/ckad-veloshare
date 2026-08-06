@@ -1,0 +1,74 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fleet-monitor
+  namespace: veloshare
+  labels:
+    app.kubernetes.io/name: fleet-monitor
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/part-of: veloshare
+spec:
+  schedule: 0 0 * * *
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: fleet-monitor
+            app.kubernetes.io/instance: veloshare
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            fsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+          - name: fleet-monitor
+            image: veloshare/fleet-monitor:0.1.0
+            imagePullPolicy: IfNotPresent
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 10001
+              runAsGroup: 10001
+              capabilities:
+                drop:
+                - ALL
+            command:
+            - sh
+            - -c
+            - 'set -o pipefail
+
+              /usr/local/bin/report.sh | tee "/reports/report-$(date -u +%F).log"
+
+              '
+            env:
+            - name: DB_HOST
+              value: postgres
+            - name: DB_PORT
+              value: '5432'
+            envFrom:
+            - secretRef:
+                name: postgres
+            volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: reports
+              mountPath: /reports
+            resources:
+              limits:
+                cpu: 100m
+                memory: 128Mi
+              requests:
+                cpu: 25m
+                memory: 64Mi
+          volumes:
+          - name: tmp
+            emptyDir: {}
+          - name: reports
+            persistentVolumeClaim:
+              claimName: fleet-monitor-reports

@@ -1,0 +1,3648 @@
+apiVersion: v1
+items:
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    creationTimestamp: "2026-08-05T15:33:08Z"
+    generateName: frontend-6bcdf9699c-
+    generation: 1
+    labels:
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/name: frontend
+      pod-template-hash: 6bcdf9699c
+    name: frontend-6bcdf9699c-4r469
+    namespace: veloshare
+    ownerReferences:
+    - apiVersion: apps/v1
+      blockOwnerDeletion: true
+      controller: true
+      kind: ReplicaSet
+      name: frontend-6bcdf9699c
+      uid: ac797485-7bab-42cc-8284-9a9591bbb803
+    resourceVersion: "75009"
+    uid: 924ffaa9-caee-40aa-a3f7-d25d7601436a
+  spec:
+    containers:
+    - image: veloshare/frontend:0.1.0
+      imagePullPolicy: IfNotPresent
+      livenessProbe:
+        failureThreshold: 3
+        httpGet:
+          path: /
+          port: 8080
+          scheme: HTTP
+        initialDelaySeconds: 5
+        periodSeconds: 10
+        successThreshold: 1
+        timeoutSeconds: 2
+      name: frontend
+      ports:
+      - containerPort: 8080
+        name: http
+        protocol: TCP
+      readinessProbe:
+        failureThreshold: 3
+        httpGet:
+          path: /
+          port: 8080
+          scheme: HTTP
+        initialDelaySeconds: 5
+        periodSeconds: 10
+        successThreshold: 1
+        timeoutSeconds: 2
+      resources:
+        limits:
+          cpu: 50m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        readOnlyRootFilesystem: true
+        runAsGroup: 101
+        runAsNonRoot: true
+        runAsUser: 101
+      terminationMessagePath: /dev/termination-log
+      terminationMessagePolicy: File
+      volumeMounts:
+      - mountPath: /tmp
+        name: tmp
+      - mountPath: /var/cache/nginx
+        name: nginx-cache
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-5nzss
+        readOnly: true
+    dnsPolicy: ClusterFirst
+    enableServiceLinks: true
+    nodeName: veloshare-worker
+    preemptionPolicy: PreemptLowerPriority
+    priority: 0
+    restartPolicy: Always
+    schedulerName: default-scheduler
+    securityContext:
+      fsGroup: 101
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+    serviceAccount: default
+    serviceAccountName: default
+    terminationGracePeriodSeconds: 30
+    tolerations:
+    - effect: NoExecute
+      key: node.kubernetes.io/not-ready
+      operator: Exists
+      tolerationSeconds: 300
+    - effect: NoExecute
+      key: node.kubernetes.io/unreachable
+      operator: Exists
+      tolerationSeconds: 300
+    volumes:
+    - emptyDir: {}
+      name: tmp
+    - emptyDir: {}
+      name: nginx-cache
+    - name: kube-api-access-5nzss
+      projected:
+        defaultMode: 420
+        sources:
+        - serviceAccountToken:
+            expirationSeconds: 3607
+            path: token
+        - configMap:
+            items:
+            - key: ca.crt
+              path: ca.crt
+            name: kube-root-ca.crt
+        - downwardAPI:
+            items:
+            - fieldRef:
+                apiVersion: v1
+                fieldPath: metadata.namespace
+              path: namespace
+  status:
+    allocatedResources:
+      cpu: 10m
+      memory: 32Mi
+    conditions:
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T17:05:51Z"
+      observedGeneration: 1
+      status: "True"
+      type: PodReadyToStartContainers
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T15:33:10Z"
+      observedGeneration: 1
+      status: "True"
+      type: Initialized
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T17:06:59Z"
+      observedGeneration: 1
+      status: "True"
+      type: Ready
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T17:06:59Z"
+      observedGeneration: 1
+      status: "True"
+      type: ContainersReady
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T15:33:09Z"
+      observedGeneration: 1
+      status: "True"
+      type: PodScheduled
+    containerStatuses:
+    - allocatedResources:
+        cpu: 10m
+        memory: 32Mi
+      containerID: containerd://64e631c1e4e5dcf8c17de10a2f5cecd52d49cab63685c74653a214c92c8cf716
+      image: docker.io/veloshare/frontend:0.1.0
+      imageID: docker.io/library/import-2026-07-30@sha256:5e86cbeccf64d8933774ad0a70d4b4feeb24bdce0ace8acb495c0ba29f97fa6f
+      lastState:
+        terminated:
+          containerID: containerd://3a3c097bf5469e4d0cbe06079d635d3c8701bceac0ecfe7f9762dca95309d184
+          exitCode: 1
+          finishedAt: "2026-08-05T17:06:17Z"
+          reason: Error
+          startedAt: "2026-08-05T17:06:11Z"
+      name: frontend
+      ready: true
+      resources:
+        limits:
+          cpu: 50m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      restartCount: 3
+      started: true
+      state:
+        running:
+          startedAt: "2026-08-05T17:06:48Z"
+      user:
+        linux:
+          gid: 101
+          supplementalGroups:
+          - 101
+          uid: 101
+      volumeMounts:
+      - mountPath: /tmp
+        name: tmp
+      - mountPath: /var/cache/nginx
+        name: nginx-cache
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-5nzss
+        readOnly: true
+        recursiveReadOnly: Disabled
+    hostIP: 172.18.0.4
+    hostIPs:
+    - ip: 172.18.0.4
+    observedGeneration: 1
+    phase: Running
+    podIP: 10.244.1.4
+    podIPs:
+    - ip: 10.244.1.4
+    qosClass: Burstable
+    resources:
+      limits:
+        cpu: 50m
+        memory: 64Mi
+      requests:
+        memory: 32Mi
+    startTime: "2026-08-05T15:33:10Z"
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    creationTimestamp: "2026-08-06T00:30:00Z"
+    generateName: pod-lister-29766270-
+    generation: 1
+    labels:
+      app.kubernetes.io/component: rbac-demo
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/name: veloshare
+      batch.kubernetes.io/controller-uid: 7d48c5bb-0915-4879-9891-1f1db3daaa2d
+      batch.kubernetes.io/job-name: pod-lister-29766270
+      controller-uid: 7d48c5bb-0915-4879-9891-1f1db3daaa2d
+      job-name: pod-lister-29766270
+    name: pod-lister-29766270-xx9fw
+    namespace: veloshare
+    ownerReferences:
+    - apiVersion: batch/v1
+      blockOwnerDeletion: true
+      controller: true
+      kind: Job
+      name: pod-lister-29766270
+      uid: 7d48c5bb-0915-4879-9891-1f1db3daaa2d
+    resourceVersion: "84917"
+    uid: 0a5ed19c-b73d-4859-a893-637e0ed8788c
+  spec:
+    automountServiceAccountToken: true
+    containers:
+    - image: veloshare/pod-lister:0.1.0
+      imagePullPolicy: IfNotPresent
+      name: pod-lister
+      resources:
+        limits:
+          cpu: 100m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        readOnlyRootFilesystem: true
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+      terminationMessagePath: /dev/termination-log
+      terminationMessagePolicy: File
+      volumeMounts:
+      - mountPath: /tmp
+        name: tmp
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-mzf86
+        readOnly: true
+    dnsPolicy: ClusterFirst
+    enableServiceLinks: true
+    nodeName: veloshare-worker
+    preemptionPolicy: PreemptLowerPriority
+    priority: 0
+    restartPolicy: Never
+    schedulerName: default-scheduler
+    securityContext:
+      fsGroup: 10001
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+    serviceAccount: pod-lister
+    serviceAccountName: pod-lister
+    terminationGracePeriodSeconds: 30
+    tolerations:
+    - effect: NoExecute
+      key: node.kubernetes.io/not-ready
+      operator: Exists
+      tolerationSeconds: 300
+    - effect: NoExecute
+      key: node.kubernetes.io/unreachable
+      operator: Exists
+      tolerationSeconds: 300
+    volumes:
+    - emptyDir: {}
+      name: tmp
+    - name: kube-api-access-mzf86
+      projected:
+        defaultMode: 420
+        sources:
+        - serviceAccountToken:
+            expirationSeconds: 3607
+            path: token
+        - configMap:
+            items:
+            - key: ca.crt
+              path: ca.crt
+            name: kube-root-ca.crt
+        - downwardAPI:
+            items:
+            - fieldRef:
+                apiVersion: v1
+                fieldPath: metadata.namespace
+              path: namespace
+  status:
+    allocatedResources:
+      cpu: 10m
+      memory: 32Mi
+    conditions:
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-06T00:30:06Z"
+      observedGeneration: 1
+      status: "False"
+      type: PodReadyToStartContainers
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-06T00:30:00Z"
+      observedGeneration: 1
+      reason: PodCompleted
+      status: "True"
+      type: Initialized
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-06T00:30:04Z"
+      observedGeneration: 1
+      reason: PodCompleted
+      status: "False"
+      type: Ready
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-06T00:30:04Z"
+      observedGeneration: 1
+      reason: PodCompleted
+      status: "False"
+      type: ContainersReady
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-06T00:30:00Z"
+      observedGeneration: 1
+      status: "True"
+      type: PodScheduled
+    containerStatuses:
+    - allocatedResources:
+        cpu: 10m
+        memory: 32Mi
+      containerID: containerd://808bc8bbe61798ade718ea5b1cbe9691522f8dd5d66007509043f5d76f1d53d4
+      image: docker.io/veloshare/pod-lister:0.1.0
+      imageID: docker.io/library/import-2026-07-31@sha256:e1a289808b7f2912efbcbe8e480f9c7db715c6938e0ad6f91ce6fc47f20301e0
+      lastState: {}
+      name: pod-lister
+      ready: false
+      resources:
+        limits:
+          cpu: 100m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      restartCount: 0
+      started: false
+      state:
+        terminated:
+          containerID: containerd://808bc8bbe61798ade718ea5b1cbe9691522f8dd5d66007509043f5d76f1d53d4
+          exitCode: 0
+          finishedAt: "2026-08-06T00:30:03Z"
+          reason: Completed
+          startedAt: "2026-08-06T00:30:02Z"
+      user:
+        linux:
+          gid: 10001
+          supplementalGroups:
+          - 10001
+          uid: 10001
+      volumeMounts:
+      - mountPath: /tmp
+        name: tmp
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-mzf86
+        readOnly: true
+        recursiveReadOnly: Disabled
+    hostIP: 172.18.0.4
+    hostIPs:
+    - ip: 172.18.0.4
+    observedGeneration: 1
+    phase: Succeeded
+    podIP: 10.244.1.23
+    podIPs:
+    - ip: 10.244.1.23
+    qosClass: Burstable
+    resources:
+      requests:
+        memory: 32Mi
+    startTime: "2026-08-06T00:30:00Z"
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    creationTimestamp: "2026-08-06T00:35:00Z"
+    generateName: pod-lister-29766275-
+    generation: 1
+    labels:
+      app.kubernetes.io/component: rbac-demo
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/name: veloshare
+      batch.kubernetes.io/controller-uid: 0aa56fe6-14e5-4f37-b86b-e6f0cbef5938
+      batch.kubernetes.io/job-name: pod-lister-29766275
+      controller-uid: 0aa56fe6-14e5-4f37-b86b-e6f0cbef5938
+      job-name: pod-lister-29766275
+    name: pod-lister-29766275-jccp9
+    namespace: veloshare
+    ownerReferences:
+    - apiVersion: batch/v1
+      blockOwnerDeletion: true
+      controller: true
+      kind: Job
+      name: pod-lister-29766275
+      uid: 0aa56fe6-14e5-4f37-b86b-e6f0cbef5938
+    resourceVersion: "85547"
+    uid: 32067b10-c845-41cd-9c05-b9d80809ef33
+  spec:
+    automountServiceAccountToken: true
+    containers:
+    - image: veloshare/pod-lister:0.1.0
+      imagePullPolicy: IfNotPresent
+      name: pod-lister
+      resources:
+        limits:
+          cpu: 100m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        readOnlyRootFilesystem: true
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+      terminationMessagePath: /dev/termination-log
+      terminationMessagePolicy: File
+      volumeMounts:
+      - mountPath: /tmp
+        name: tmp
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-c5r5j
+        readOnly: true
+    dnsPolicy: ClusterFirst
+    enableServiceLinks: true
+    nodeName: veloshare-worker
+    preemptionPolicy: PreemptLowerPriority
+    priority: 0
+    restartPolicy: Never
+    schedulerName: default-scheduler
+    securityContext:
+      fsGroup: 10001
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+    serviceAccount: pod-lister
+    serviceAccountName: pod-lister
+    terminationGracePeriodSeconds: 30
+    tolerations:
+    - effect: NoExecute
+      key: node.kubernetes.io/not-ready
+      operator: Exists
+      tolerationSeconds: 300
+    - effect: NoExecute
+      key: node.kubernetes.io/unreachable
+      operator: Exists
+      tolerationSeconds: 300
+    volumes:
+    - emptyDir: {}
+      name: tmp
+    - name: kube-api-access-c5r5j
+      projected:
+        defaultMode: 420
+        sources:
+        - serviceAccountToken:
+            expirationSeconds: 3607
+            path: token
+        - configMap:
+            items:
+            - key: ca.crt
+              path: ca.crt
+            name: kube-root-ca.crt
+        - downwardAPI:
+            items:
+            - fieldRef:
+                apiVersion: v1
+                fieldPath: metadata.namespace
+              path: namespace
+  status:
+    allocatedResources:
+      cpu: 10m
+      memory: 32Mi
+    conditions:
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-06T00:35:05Z"
+      observedGeneration: 1
+      status: "False"
+      type: PodReadyToStartContainers
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-06T00:35:00Z"
+      observedGeneration: 1
+      reason: PodCompleted
+      status: "True"
+      type: Initialized
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-06T00:35:04Z"
+      observedGeneration: 1
+      reason: PodCompleted
+      status: "False"
+      type: Ready
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-06T00:35:04Z"
+      observedGeneration: 1
+      reason: PodCompleted
+      status: "False"
+      type: ContainersReady
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-06T00:35:00Z"
+      observedGeneration: 1
+      status: "True"
+      type: PodScheduled
+    containerStatuses:
+    - allocatedResources:
+        cpu: 10m
+        memory: 32Mi
+      containerID: containerd://3f930d18a526139adbafb482505f8b747bc9018e79d7080387f7cb8ff6a20991
+      image: docker.io/veloshare/pod-lister:0.1.0
+      imageID: docker.io/library/import-2026-07-31@sha256:e1a289808b7f2912efbcbe8e480f9c7db715c6938e0ad6f91ce6fc47f20301e0
+      lastState: {}
+      name: pod-lister
+      ready: false
+      resources:
+        limits:
+          cpu: 100m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      restartCount: 0
+      started: false
+      state:
+        terminated:
+          containerID: containerd://3f930d18a526139adbafb482505f8b747bc9018e79d7080387f7cb8ff6a20991
+          exitCode: 0
+          finishedAt: "2026-08-06T00:35:04Z"
+          reason: Completed
+          startedAt: "2026-08-06T00:35:02Z"
+      user:
+        linux:
+          gid: 10001
+          supplementalGroups:
+          - 10001
+          uid: 10001
+      volumeMounts:
+      - mountPath: /tmp
+        name: tmp
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-c5r5j
+        readOnly: true
+        recursiveReadOnly: Disabled
+    hostIP: 172.18.0.4
+    hostIPs:
+    - ip: 172.18.0.4
+    observedGeneration: 1
+    phase: Succeeded
+    podIP: 10.244.1.24
+    podIPs:
+    - ip: 10.244.1.24
+    qosClass: Burstable
+    resources:
+      limits:
+        cpu: 100m
+        memory: 64Mi
+      requests:
+        memory: 32Mi
+    startTime: "2026-08-06T00:35:00Z"
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    creationTimestamp: "2026-08-06T00:40:00Z"
+    generateName: pod-lister-29766280-
+    generation: 1
+    labels:
+      app.kubernetes.io/component: rbac-demo
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/name: veloshare
+      batch.kubernetes.io/controller-uid: 374f3b40-e34a-48ea-8075-d1eb7040a6b0
+      batch.kubernetes.io/job-name: pod-lister-29766280
+      controller-uid: 374f3b40-e34a-48ea-8075-d1eb7040a6b0
+      job-name: pod-lister-29766280
+    name: pod-lister-29766280-7ws9d
+    namespace: veloshare
+    ownerReferences:
+    - apiVersion: batch/v1
+      blockOwnerDeletion: true
+      controller: true
+      kind: Job
+      name: pod-lister-29766280
+      uid: 374f3b40-e34a-48ea-8075-d1eb7040a6b0
+    resourceVersion: "86160"
+    uid: 31be1d2e-5c94-4a48-8785-b2791916f9ea
+  spec:
+    automountServiceAccountToken: true
+    containers:
+    - image: veloshare/pod-lister:0.1.0
+      imagePullPolicy: IfNotPresent
+      name: pod-lister
+      resources:
+        limits:
+          cpu: 100m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        readOnlyRootFilesystem: true
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+      terminationMessagePath: /dev/termination-log
+      terminationMessagePolicy: File
+      volumeMounts:
+      - mountPath: /tmp
+        name: tmp
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-mvshd
+        readOnly: true
+    dnsPolicy: ClusterFirst
+    enableServiceLinks: true
+    nodeName: veloshare-worker
+    preemptionPolicy: PreemptLowerPriority
+    priority: 0
+    restartPolicy: Never
+    schedulerName: default-scheduler
+    securityContext:
+      fsGroup: 10001
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+    serviceAccount: pod-lister
+    serviceAccountName: pod-lister
+    terminationGracePeriodSeconds: 30
+    tolerations:
+    - effect: NoExecute
+      key: node.kubernetes.io/not-ready
+      operator: Exists
+      tolerationSeconds: 300
+    - effect: NoExecute
+      key: node.kubernetes.io/unreachable
+      operator: Exists
+      tolerationSeconds: 300
+    volumes:
+    - emptyDir: {}
+      name: tmp
+    - name: kube-api-access-mvshd
+      projected:
+        defaultMode: 420
+        sources:
+        - serviceAccountToken:
+            expirationSeconds: 3607
+            path: token
+        - configMap:
+            items:
+            - key: ca.crt
+              path: ca.crt
+            name: kube-root-ca.crt
+        - downwardAPI:
+            items:
+            - fieldRef:
+                apiVersion: v1
+                fieldPath: metadata.namespace
+              path: namespace
+  status:
+    allocatedResources:
+      cpu: 10m
+      memory: 32Mi
+    conditions:
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-06T00:40:12Z"
+      observedGeneration: 1
+      status: "False"
+      type: PodReadyToStartContainers
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-06T00:40:00Z"
+      observedGeneration: 1
+      reason: PodCompleted
+      status: "True"
+      type: Initialized
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-06T00:40:11Z"
+      observedGeneration: 1
+      reason: PodCompleted
+      status: "False"
+      type: Ready
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-06T00:40:11Z"
+      observedGeneration: 1
+      reason: PodCompleted
+      status: "False"
+      type: ContainersReady
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-06T00:40:00Z"
+      observedGeneration: 1
+      status: "True"
+      type: PodScheduled
+    containerStatuses:
+    - allocatedResources:
+        cpu: 10m
+        memory: 32Mi
+      containerID: containerd://fb15b4d5431c2fa12b859dd7d08ae60c810efa39d08f3b9b0036acd178f0189d
+      image: docker.io/veloshare/pod-lister:0.1.0
+      imageID: docker.io/library/import-2026-07-31@sha256:e1a289808b7f2912efbcbe8e480f9c7db715c6938e0ad6f91ce6fc47f20301e0
+      lastState: {}
+      name: pod-lister
+      ready: false
+      resources:
+        limits:
+          cpu: 100m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      restartCount: 0
+      started: false
+      state:
+        terminated:
+          containerID: containerd://fb15b4d5431c2fa12b859dd7d08ae60c810efa39d08f3b9b0036acd178f0189d
+          exitCode: 0
+          finishedAt: "2026-08-06T00:40:10Z"
+          reason: Completed
+          startedAt: "2026-08-06T00:40:06Z"
+      user:
+        linux:
+          gid: 10001
+          supplementalGroups:
+          - 10001
+          uid: 10001
+      volumeMounts:
+      - mountPath: /tmp
+        name: tmp
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-mvshd
+        readOnly: true
+        recursiveReadOnly: Disabled
+    hostIP: 172.18.0.4
+    hostIPs:
+    - ip: 172.18.0.4
+    observedGeneration: 1
+    phase: Succeeded
+    podIP: 10.244.1.25
+    podIPs:
+    - ip: 10.244.1.25
+    qosClass: Burstable
+    resources:
+      limits:
+        cpu: 100m
+        memory: 64Mi
+      requests:
+        memory: 32Mi
+    startTime: "2026-08-06T00:40:00Z"
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    creationTimestamp: "2026-08-05T17:38:33Z"
+    generateName: postgres-
+    generation: 1
+    labels:
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/name: postgres
+      apps.kubernetes.io/pod-index: "0"
+      controller-revision-hash: postgres-99bc5f58f
+      statefulset.kubernetes.io/pod-name: postgres-0
+    name: postgres-0
+    namespace: veloshare
+    ownerReferences:
+    - apiVersion: apps/v1
+      blockOwnerDeletion: true
+      controller: true
+      kind: StatefulSet
+      name: postgres
+      uid: 46b7f2b2-fbc2-481c-9f7c-bd3951a15f75
+    resourceVersion: "79405"
+    uid: 006302c3-d522-4b37-9d00-981bc1ec5404
+  spec:
+    containers:
+    - env:
+      - name: PGDATA
+        value: /var/lib/postgresql/data/pgdata
+      envFrom:
+      - secretRef:
+          name: postgres
+      image: postgres:16
+      imagePullPolicy: IfNotPresent
+      livenessProbe:
+        exec:
+          command:
+          - pg_isready
+          - -U
+          - postgres
+          - -d
+          - veloshare
+        failureThreshold: 3
+        initialDelaySeconds: 10
+        periodSeconds: 10
+        successThreshold: 1
+        timeoutSeconds: 3
+      name: postgres
+      ports:
+      - containerPort: 5432
+        name: postgres
+        protocol: TCP
+      readinessProbe:
+        exec:
+          command:
+          - pg_isready
+          - -U
+          - postgres
+          - -d
+          - veloshare
+        failureThreshold: 3
+        initialDelaySeconds: 10
+        periodSeconds: 10
+        successThreshold: 1
+        timeoutSeconds: 3
+      resources:
+        limits:
+          cpu: 500m
+          memory: 512Mi
+        requests:
+          cpu: 100m
+          memory: 192Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        readOnlyRootFilesystem: true
+        runAsGroup: 999
+        runAsNonRoot: true
+        runAsUser: 999
+      terminationMessagePath: /dev/termination-log
+      terminationMessagePolicy: File
+      volumeMounts:
+      - mountPath: /var/lib/postgresql/data
+        name: data
+      - mountPath: /docker-entrypoint-initdb.d
+        name: init-sql
+        readOnly: true
+      - mountPath: /var/run/postgresql
+        name: run
+      - mountPath: /tmp
+        name: tmp
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-lhxzm
+        readOnly: true
+    dnsPolicy: ClusterFirst
+    enableServiceLinks: true
+    hostname: postgres-0
+    nodeName: veloshare-worker
+    preemptionPolicy: PreemptLowerPriority
+    priority: 0
+    restartPolicy: Always
+    schedulerName: default-scheduler
+    securityContext:
+      fsGroup: 999
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+    serviceAccount: default
+    serviceAccountName: default
+    subdomain: postgres
+    terminationGracePeriodSeconds: 30
+    tolerations:
+    - effect: NoExecute
+      key: node.kubernetes.io/not-ready
+      operator: Exists
+      tolerationSeconds: 300
+    - effect: NoExecute
+      key: node.kubernetes.io/unreachable
+      operator: Exists
+      tolerationSeconds: 300
+    volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: data-postgres-0
+    - configMap:
+        defaultMode: 493
+        name: postgres-init
+      name: init-sql
+    - emptyDir: {}
+      name: run
+    - emptyDir: {}
+      name: tmp
+    - name: kube-api-access-lhxzm
+      projected:
+        defaultMode: 420
+        sources:
+        - serviceAccountToken:
+            expirationSeconds: 3607
+            path: token
+        - configMap:
+            items:
+            - key: ca.crt
+              path: ca.crt
+            name: kube-root-ca.crt
+        - downwardAPI:
+            items:
+            - fieldRef:
+                apiVersion: v1
+                fieldPath: metadata.namespace
+              path: namespace
+  status:
+    allocatedResources:
+      cpu: 100m
+      memory: 192Mi
+    conditions:
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T17:38:33Z"
+      observedGeneration: 1
+      status: "True"
+      type: PodReadyToStartContainers
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T17:38:33Z"
+      observedGeneration: 1
+      status: "True"
+      type: Initialized
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T17:38:44Z"
+      observedGeneration: 1
+      status: "True"
+      type: Ready
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T17:38:44Z"
+      observedGeneration: 1
+      status: "True"
+      type: ContainersReady
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T17:38:33Z"
+      observedGeneration: 1
+      status: "True"
+      type: PodScheduled
+    containerStatuses:
+    - allocatedResources:
+        cpu: 100m
+        memory: 192Mi
+      containerID: containerd://7299741801840dd95747e9cee8eff1172849aabef90e58db03a696161647ea75
+      image: docker.io/library/postgres:16
+      imageID: docker.io/library/postgres@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
+      lastState: {}
+      name: postgres
+      ready: true
+      resources:
+        limits:
+          cpu: 500m
+          memory: 512Mi
+        requests:
+          cpu: 100m
+          memory: 192Mi
+      restartCount: 0
+      started: true
+      state:
+        running:
+          startedAt: "2026-08-05T17:38:33Z"
+      user:
+        linux:
+          gid: 999
+          supplementalGroups:
+          - 101
+          - 999
+          uid: 999
+      volumeMounts:
+      - mountPath: /var/lib/postgresql/data
+        name: data
+      - mountPath: /docker-entrypoint-initdb.d
+        name: init-sql
+        readOnly: true
+        recursiveReadOnly: Disabled
+      - mountPath: /var/run/postgresql
+        name: run
+      - mountPath: /tmp
+        name: tmp
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-lhxzm
+        readOnly: true
+        recursiveReadOnly: Disabled
+    hostIP: 172.18.0.4
+    hostIPs:
+    - ip: 172.18.0.4
+    observedGeneration: 1
+    phase: Running
+    podIP: 10.244.1.12
+    podIPs:
+    - ip: 10.244.1.12
+    qosClass: Burstable
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 79m
+        memory: 192Mi
+    startTime: "2026-08-05T17:38:33Z"
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/restartedAt: "2026-08-06T00:33:40Z"
+    creationTimestamp: "2026-08-06T00:41:00Z"
+    generateName: pricing-76d4b8ffbb-
+    generation: 1
+    labels:
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/name: pricing
+      pod-template-hash: 76d4b8ffbb
+    name: pricing-76d4b8ffbb-jwr4x
+    namespace: veloshare
+    ownerReferences:
+    - apiVersion: apps/v1
+      blockOwnerDeletion: true
+      controller: true
+      kind: ReplicaSet
+      name: pricing-76d4b8ffbb
+      uid: 4c75bf5e-f9f5-479b-87e7-ffc0b17b59ae
+    resourceVersion: "86456"
+    uid: 2b6b6d7c-c55a-4d05-8ecd-1384cd6af77d
+  spec:
+    containers:
+    - env:
+      - name: PYTHONDONTWRITEBYTECODE
+        value: "1"
+      envFrom:
+      - configMapRef:
+          name: pricing
+      image: veloshare/pricing:0.1.0
+      imagePullPolicy: IfNotPresent
+      livenessProbe:
+        failureThreshold: 3
+        httpGet:
+          path: /healthz
+          port: 8000
+          scheme: HTTP
+        initialDelaySeconds: 5
+        periodSeconds: 10
+        successThreshold: 1
+        timeoutSeconds: 2
+      name: pricing
+      ports:
+      - containerPort: 8000
+        name: http
+        protocol: TCP
+      readinessProbe:
+        failureThreshold: 3
+        httpGet:
+          path: /healthz
+          port: 8000
+          scheme: HTTP
+        initialDelaySeconds: 5
+        periodSeconds: 10
+        successThreshold: 1
+        timeoutSeconds: 2
+      resources:
+        limits:
+          cpu: 150m
+          memory: 192Mi
+        requests:
+          cpu: 25m
+          memory: 96Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        readOnlyRootFilesystem: true
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+      terminationMessagePath: /dev/termination-log
+      terminationMessagePolicy: File
+      volumeMounts:
+      - mountPath: /var/log/veloshare
+        name: logs
+      - mountPath: /tmp
+        name: tmp
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-7gr7c
+        readOnly: true
+    - image: nginxinc/nginx-unprivileged:1.27-alpine
+      imagePullPolicy: IfNotPresent
+      name: ambassador
+      ports:
+      - containerPort: 8080
+        name: ambassador
+        protocol: TCP
+      resources:
+        limits:
+          cpu: 50m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        readOnlyRootFilesystem: true
+        runAsGroup: 101
+        runAsNonRoot: true
+        runAsUser: 101
+      terminationMessagePath: /dev/termination-log
+      terminationMessagePolicy: File
+      volumeMounts:
+      - mountPath: /etc/nginx/conf.d/default.conf
+        name: ambassador-config
+        readOnly: true
+        subPath: default.conf
+      - mountPath: /tmp
+        name: ambassador-tmp
+      - mountPath: /var/cache/nginx
+        name: ambassador-cache
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-7gr7c
+        readOnly: true
+    - image: fluent/fluent-bit:3.1.9
+      imagePullPolicy: IfNotPresent
+      name: log-agent
+      resources:
+        limits:
+          cpu: 50m
+          memory: 96Mi
+        requests:
+          cpu: 10m
+          memory: 48Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        readOnlyRootFilesystem: true
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      terminationMessagePath: /dev/termination-log
+      terminationMessagePolicy: File
+      volumeMounts:
+      - mountPath: /var/log/veloshare
+        name: logs
+        readOnly: true
+      - mountPath: /fluent-bit/etc/
+        name: fluent-bit-config
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-7gr7c
+        readOnly: true
+    dnsPolicy: ClusterFirst
+    enableServiceLinks: true
+    initContainers:
+    - command:
+      - sh
+      - -c
+      - |
+        echo "config check passed: all required env vars present"
+      envFrom:
+      - configMapRef:
+          name: pricing
+      image: alpine:3.20
+      imagePullPolicy: IfNotPresent
+      name: config-check
+      resources:
+        limits:
+          cpu: 50m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        readOnlyRootFilesystem: true
+        runAsGroup: 65534
+        runAsNonRoot: true
+        runAsUser: 65534
+      terminationMessagePath: /dev/termination-log
+      terminationMessagePolicy: File
+      volumeMounts:
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-7gr7c
+        readOnly: true
+    - command:
+      - bash
+      - -c
+      - |
+        echo "waiting for rider at ${RIDER_HOST}:${RIDER_PORT} ..."
+        until (exec 3<>/dev/tcp/${RIDER_HOST}/${RIDER_PORT}) 2>/dev/null; do
+          echo "  rider not reachable yet, retrying in 2s"; sleep 2
+        done
+        exec 3>&- 2>/dev/null || true
+        echo "rider is reachable."
+
+        echo "checking database at ${DB_HOST}:${DB_PORT} ..."
+        until pg_isready -h "${DB_HOST}" -p "${DB_PORT}" >/dev/null 2>&1; do
+          echo "  database not accepting connections yet, retrying in 2s"; sleep 2
+        done
+        echo "database is accepting connections. dependencies satisfied."
+      env:
+      - name: RIDER_HOST
+        value: rider
+      - name: RIDER_PORT
+        value: "80"
+      - name: DB_HOST
+        value: postgres
+      - name: DB_PORT
+        value: "5432"
+      image: postgres:16
+      imagePullPolicy: IfNotPresent
+      name: wait-for-deps
+      resources:
+        limits:
+          cpu: 100m
+          memory: 128Mi
+        requests:
+          cpu: 25m
+          memory: 64Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        readOnlyRootFilesystem: true
+        runAsGroup: 999
+        runAsNonRoot: true
+        runAsUser: 999
+      terminationMessagePath: /dev/termination-log
+      terminationMessagePolicy: File
+      volumeMounts:
+      - mountPath: /tmp
+        name: tmp
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-7gr7c
+        readOnly: true
+    nodeName: veloshare-worker2
+    preemptionPolicy: PreemptLowerPriority
+    priority: 0
+    restartPolicy: Always
+    schedulerName: default-scheduler
+    securityContext:
+      fsGroup: 10001
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+    serviceAccount: default
+    serviceAccountName: default
+    terminationGracePeriodSeconds: 30
+    tolerations:
+    - effect: NoExecute
+      key: node.kubernetes.io/not-ready
+      operator: Exists
+      tolerationSeconds: 300
+    - effect: NoExecute
+      key: node.kubernetes.io/unreachable
+      operator: Exists
+      tolerationSeconds: 300
+    volumes:
+    - emptyDir: {}
+      name: tmp
+    - configMap:
+        defaultMode: 420
+        name: pricing-ambassador
+      name: ambassador-config
+    - emptyDir: {}
+      name: ambassador-tmp
+    - emptyDir: {}
+      name: ambassador-cache
+    - emptyDir: {}
+      name: logs
+    - configMap:
+        defaultMode: 420
+        name: fluent-bit-config
+      name: fluent-bit-config
+    - name: kube-api-access-7gr7c
+      projected:
+        defaultMode: 420
+        sources:
+        - serviceAccountToken:
+            expirationSeconds: 3607
+            path: token
+        - configMap:
+            items:
+            - key: ca.crt
+              path: ca.crt
+            name: kube-root-ca.crt
+        - downwardAPI:
+            items:
+            - fieldRef:
+                apiVersion: v1
+                fieldPath: metadata.namespace
+              path: namespace
+  status:
+    allocatedResources:
+      cpu: 45m
+      memory: 176Mi
+    conditions:
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-06T00:41:02Z"
+      observedGeneration: 1
+      status: "True"
+      type: PodReadyToStartContainers
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-06T00:41:14Z"
+      observedGeneration: 1
+      status: "True"
+      type: Initialized
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-06T00:42:02Z"
+      observedGeneration: 1
+      status: "True"
+      type: Ready
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-06T00:42:02Z"
+      observedGeneration: 1
+      status: "True"
+      type: ContainersReady
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-06T00:41:00Z"
+      observedGeneration: 1
+      status: "True"
+      type: PodScheduled
+    containerStatuses:
+    - allocatedResources:
+        cpu: 10m
+        memory: 32Mi
+      containerID: containerd://8f65bb21682ab24d0dab360d1477e77064a6aeb6acc02208b6e31604274f893c
+      image: docker.io/nginxinc/nginx-unprivileged:1.27-alpine
+      imageID: docker.io/nginxinc/nginx-unprivileged@sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0
+      lastState: {}
+      name: ambassador
+      ready: true
+      resources:
+        limits:
+          cpu: 50m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      restartCount: 0
+      started: true
+      state:
+        running:
+          startedAt: "2026-08-06T00:41:22Z"
+      user:
+        linux:
+          gid: 101
+          supplementalGroups:
+          - 101
+          - 10001
+          uid: 101
+      volumeMounts:
+      - mountPath: /etc/nginx/conf.d/default.conf
+        name: ambassador-config
+        readOnly: true
+        recursiveReadOnly: Disabled
+      - mountPath: /tmp
+        name: ambassador-tmp
+      - mountPath: /var/cache/nginx
+        name: ambassador-cache
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-7gr7c
+        readOnly: true
+        recursiveReadOnly: Disabled
+    - allocatedResources:
+        cpu: 10m
+        memory: 48Mi
+      containerID: containerd://ea91d377fc5b248aae19fd1f2deed9e8c7d64cab55ae54c72941439be846ed6d
+      image: docker.io/fluent/fluent-bit:3.1.9
+      imageID: docker.io/fluent/fluent-bit@sha256:4af3920cc2ff976200e0fc09f23e7ca4ee7d4477a6d592cb496fc39378181b02
+      lastState: {}
+      name: log-agent
+      ready: true
+      resources:
+        limits:
+          cpu: 50m
+          memory: 96Mi
+        requests:
+          cpu: 10m
+          memory: 48Mi
+      restartCount: 0
+      started: true
+      state:
+        running:
+          startedAt: "2026-08-06T00:41:31Z"
+      user:
+        linux:
+          gid: 1000
+          supplementalGroups:
+          - 1000
+          - 10001
+          uid: 1000
+      volumeMounts:
+      - mountPath: /var/log/veloshare
+        name: logs
+        readOnly: true
+        recursiveReadOnly: Disabled
+      - mountPath: /fluent-bit/etc/
+        name: fluent-bit-config
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-7gr7c
+        readOnly: true
+        recursiveReadOnly: Disabled
+    - allocatedResources:
+        cpu: 25m
+        memory: 96Mi
+      containerID: containerd://75694d341f7f1fa30c02dd101969d47a9aba7ca7ecb59d36bee8125de98c9988
+      image: docker.io/veloshare/pricing:0.1.0
+      imageID: docker.io/library/import-2026-08-06@sha256:9e62b763fbed1a0f52d6c28358063013cfd001aa1256599496763bbdc2eae4be
+      lastState: {}
+      name: pricing
+      ready: true
+      resources:
+        limits:
+          cpu: 150m
+          memory: 192Mi
+        requests:
+          cpu: 25m
+          memory: 96Mi
+      restartCount: 0
+      started: true
+      state:
+        running:
+          startedAt: "2026-08-06T00:41:16Z"
+      user:
+        linux:
+          gid: 10001
+          supplementalGroups:
+          - 10001
+          uid: 10001
+      volumeMounts:
+      - mountPath: /var/log/veloshare
+        name: logs
+      - mountPath: /tmp
+        name: tmp
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-7gr7c
+        readOnly: true
+        recursiveReadOnly: Disabled
+    hostIP: 172.18.0.3
+    hostIPs:
+    - ip: 172.18.0.3
+    initContainerStatuses:
+    - allocatedResources:
+        cpu: 10m
+        memory: 32Mi
+      containerID: containerd://2588977426f162a92f7dfc694946f4ad92f1740722e2ad66937682c671c9a050
+      image: docker.io/library/alpine:3.20
+      imageID: docker.io/library/alpine@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+      lastState: {}
+      name: config-check
+      ready: true
+      resources:
+        limits:
+          cpu: 50m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      restartCount: 0
+      started: false
+      state:
+        terminated:
+          containerID: containerd://2588977426f162a92f7dfc694946f4ad92f1740722e2ad66937682c671c9a050
+          exitCode: 0
+          finishedAt: "2026-08-06T00:41:07Z"
+          reason: Completed
+          startedAt: "2026-08-06T00:41:07Z"
+      user:
+        linux:
+          gid: 65534
+          supplementalGroups:
+          - 10001
+          - 65534
+          uid: 65534
+      volumeMounts:
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-7gr7c
+        readOnly: true
+        recursiveReadOnly: Disabled
+    - allocatedResources:
+        cpu: 25m
+        memory: 64Mi
+      containerID: containerd://e7107aff7b4cab21ff67570a134a38cf6ba75dcb1260d27c2ed23a8ed19c38ff
+      image: docker.io/library/postgres:16
+      imageID: docker.io/library/postgres@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
+      lastState: {}
+      name: wait-for-deps
+      ready: true
+      resources:
+        limits:
+          cpu: 100m
+          memory: 128Mi
+        requests:
+          cpu: 25m
+          memory: 64Mi
+      restartCount: 0
+      started: false
+      state:
+        terminated:
+          containerID: containerd://e7107aff7b4cab21ff67570a134a38cf6ba75dcb1260d27c2ed23a8ed19c38ff
+          exitCode: 0
+          finishedAt: "2026-08-06T00:41:14Z"
+          reason: Completed
+          startedAt: "2026-08-06T00:41:11Z"
+      user:
+        linux:
+          gid: 999
+          supplementalGroups:
+          - 101
+          - 999
+          - 10001
+          uid: 999
+      volumeMounts:
+      - mountPath: /tmp
+        name: tmp
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-7gr7c
+        readOnly: true
+        recursiveReadOnly: Disabled
+    observedGeneration: 1
+    phase: Running
+    podIP: 10.244.2.43
+    podIPs:
+    - ip: 10.244.2.43
+    qosClass: Burstable
+    resources:
+      limits:
+        cpu: 250m
+        memory: 352Mi
+      requests:
+        cpu: 28m
+        memory: 176Mi
+    startTime: "2026-08-06T00:41:00Z"
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    creationTimestamp: "2026-08-05T15:33:08Z"
+    generateName: redis-66c8df98b4-
+    generation: 1
+    labels:
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/name: redis
+      pod-template-hash: 66c8df98b4
+    name: redis-66c8df98b4-zwbvn
+    namespace: veloshare
+    ownerReferences:
+    - apiVersion: apps/v1
+      blockOwnerDeletion: true
+      controller: true
+      kind: ReplicaSet
+      name: redis-66c8df98b4
+      uid: 104213c9-7d94-4655-b261-fcf332821424
+    resourceVersion: "74695"
+    uid: 391259d5-2a9d-420a-a7b0-e7981f56d89a
+  spec:
+    containers:
+    - image: redis:7-alpine
+      imagePullPolicy: IfNotPresent
+      livenessProbe:
+        exec:
+          command:
+          - redis-cli
+          - ping
+        failureThreshold: 3
+        initialDelaySeconds: 5
+        periodSeconds: 10
+        successThreshold: 1
+        timeoutSeconds: 2
+      name: redis
+      ports:
+      - containerPort: 6379
+        name: redis
+        protocol: TCP
+      readinessProbe:
+        exec:
+          command:
+          - redis-cli
+          - ping
+        failureThreshold: 3
+        initialDelaySeconds: 5
+        periodSeconds: 10
+        successThreshold: 1
+        timeoutSeconds: 2
+      resources:
+        limits:
+          cpu: 100m
+          memory: 128Mi
+        requests:
+          cpu: 25m
+          memory: 64Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        readOnlyRootFilesystem: true
+        runAsGroup: 999
+        runAsNonRoot: true
+        runAsUser: 999
+      terminationMessagePath: /dev/termination-log
+      terminationMessagePolicy: File
+      volumeMounts:
+      - mountPath: /data
+        name: data
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-q4j6z
+        readOnly: true
+    dnsPolicy: ClusterFirst
+    enableServiceLinks: true
+    nodeName: veloshare-worker2
+    preemptionPolicy: PreemptLowerPriority
+    priority: 0
+    restartPolicy: Always
+    schedulerName: default-scheduler
+    securityContext:
+      fsGroup: 999
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+    serviceAccount: default
+    serviceAccountName: default
+    terminationGracePeriodSeconds: 30
+    tolerations:
+    - effect: NoExecute
+      key: node.kubernetes.io/not-ready
+      operator: Exists
+      tolerationSeconds: 300
+    - effect: NoExecute
+      key: node.kubernetes.io/unreachable
+      operator: Exists
+      tolerationSeconds: 300
+    volumes:
+    - emptyDir: {}
+      name: data
+    - name: kube-api-access-q4j6z
+      projected:
+        defaultMode: 420
+        sources:
+        - serviceAccountToken:
+            expirationSeconds: 3607
+            path: token
+        - configMap:
+            items:
+            - key: ca.crt
+              path: ca.crt
+            name: kube-root-ca.crt
+        - downwardAPI:
+            items:
+            - fieldRef:
+                apiVersion: v1
+                fieldPath: metadata.namespace
+              path: namespace
+  status:
+    allocatedResources:
+      cpu: 25m
+      memory: 64Mi
+    conditions:
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T17:05:50Z"
+      observedGeneration: 1
+      status: "True"
+      type: PodReadyToStartContainers
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T15:33:10Z"
+      observedGeneration: 1
+      status: "True"
+      type: Initialized
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T17:06:02Z"
+      observedGeneration: 1
+      status: "True"
+      type: Ready
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T17:06:02Z"
+      observedGeneration: 1
+      status: "True"
+      type: ContainersReady
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T15:33:09Z"
+      observedGeneration: 1
+      status: "True"
+      type: PodScheduled
+    containerStatuses:
+    - allocatedResources:
+        cpu: 25m
+        memory: 64Mi
+      containerID: containerd://14e71920ed5d4b787da46a853fe3d8f1fd3ef5643c3cd35c565d6b21316eda29
+      image: docker.io/library/redis:7-alpine
+      imageID: docker.io/library/redis@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
+      lastState:
+        terminated:
+          containerID: containerd://6635c4cdad0a6fc2e4c5c8ce739c6a0a23e5871898acaa280709381236114a04
+          exitCode: 255
+          finishedAt: "2026-08-05T17:05:44Z"
+          reason: Unknown
+          startedAt: "2026-08-05T15:33:28Z"
+      name: redis
+      ready: true
+      resources:
+        limits:
+          cpu: 100m
+          memory: 128Mi
+        requests:
+          cpu: 25m
+          memory: 64Mi
+      restartCount: 1
+      started: true
+      state:
+        running:
+          startedAt: "2026-08-05T17:05:51Z"
+      user:
+        linux:
+          gid: 999
+          supplementalGroups:
+          - 999
+          uid: 999
+      volumeMounts:
+      - mountPath: /data
+        name: data
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-q4j6z
+        readOnly: true
+        recursiveReadOnly: Disabled
+    hostIP: 172.18.0.3
+    hostIPs:
+    - ip: 172.18.0.3
+    observedGeneration: 1
+    phase: Running
+    podIP: 10.244.2.2
+    podIPs:
+    - ip: 10.244.2.2
+    qosClass: Burstable
+    resources:
+      limits:
+        cpu: 100m
+        memory: 128Mi
+      requests:
+        memory: 64Mi
+    startTime: "2026-08-05T15:33:10Z"
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    creationTimestamp: "2026-08-05T17:16:03Z"
+    generateName: report-now-
+    generation: 1
+    labels:
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/name: fleet-monitor
+      batch.kubernetes.io/controller-uid: bc6758fa-5a63-471d-b186-fd23f09d1313
+      batch.kubernetes.io/job-name: report-now
+      controller-uid: bc6758fa-5a63-471d-b186-fd23f09d1313
+      job-name: report-now
+    name: report-now-xlcnz
+    namespace: veloshare
+    ownerReferences:
+    - apiVersion: batch/v1
+      blockOwnerDeletion: true
+      controller: true
+      kind: Job
+      name: report-now
+      uid: bc6758fa-5a63-471d-b186-fd23f09d1313
+    resourceVersion: "76246"
+    uid: aad529bc-3ff9-40a1-b205-c113de239216
+  spec:
+    containers:
+    - command:
+      - sh
+      - -c
+      - |
+        set -o pipefail
+        /usr/local/bin/report.sh | tee "/reports/report-$(date -u +%F).log"
+      env:
+      - name: DB_HOST
+        value: postgres
+      - name: DB_PORT
+        value: "5432"
+      envFrom:
+      - secretRef:
+          name: postgres
+      image: veloshare/fleet-monitor:0.1.0
+      imagePullPolicy: IfNotPresent
+      name: fleet-monitor
+      resources:
+        limits:
+          cpu: 100m
+          memory: 128Mi
+        requests:
+          cpu: 25m
+          memory: 64Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        readOnlyRootFilesystem: true
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+      terminationMessagePath: /dev/termination-log
+      terminationMessagePolicy: File
+      volumeMounts:
+      - mountPath: /tmp
+        name: tmp
+      - mountPath: /reports
+        name: reports
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-rmmx9
+        readOnly: true
+    dnsPolicy: ClusterFirst
+    enableServiceLinks: true
+    nodeName: veloshare-worker2
+    preemptionPolicy: PreemptLowerPriority
+    priority: 0
+    restartPolicy: Never
+    schedulerName: default-scheduler
+    securityContext:
+      fsGroup: 10001
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+    serviceAccount: default
+    serviceAccountName: default
+    terminationGracePeriodSeconds: 30
+    tolerations:
+    - effect: NoExecute
+      key: node.kubernetes.io/not-ready
+      operator: Exists
+      tolerationSeconds: 300
+    - effect: NoExecute
+      key: node.kubernetes.io/unreachable
+      operator: Exists
+      tolerationSeconds: 300
+    volumes:
+    - emptyDir: {}
+      name: tmp
+    - name: reports
+      persistentVolumeClaim:
+        claimName: fleet-monitor-reports
+    - name: kube-api-access-rmmx9
+      projected:
+        defaultMode: 420
+        sources:
+        - serviceAccountToken:
+            expirationSeconds: 3607
+            path: token
+        - configMap:
+            items:
+            - key: ca.crt
+              path: ca.crt
+            name: kube-root-ca.crt
+        - downwardAPI:
+            items:
+            - fieldRef:
+                apiVersion: v1
+                fieldPath: metadata.namespace
+              path: namespace
+  status:
+    allocatedResources:
+      cpu: 25m
+      memory: 64Mi
+    conditions:
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T17:16:12Z"
+      observedGeneration: 1
+      status: "False"
+      type: PodReadyToStartContainers
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T17:16:07Z"
+      observedGeneration: 1
+      reason: PodCompleted
+      status: "True"
+      type: Initialized
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T17:16:10Z"
+      observedGeneration: 1
+      reason: PodCompleted
+      status: "False"
+      type: Ready
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T17:16:10Z"
+      observedGeneration: 1
+      reason: PodCompleted
+      status: "False"
+      type: ContainersReady
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T17:16:07Z"
+      observedGeneration: 1
+      status: "True"
+      type: PodScheduled
+    containerStatuses:
+    - allocatedResources:
+        cpu: 25m
+        memory: 64Mi
+      containerID: containerd://bfb9d65da45c1a9031c40674ce7a023500675c90fd3ad093c3d27f8474b3d387
+      image: docker.io/veloshare/fleet-monitor:0.1.0
+      imageID: docker.io/library/import-2026-08-05@sha256:7e4a4017d2d41c5327a0d694355b714cad976530cfda0bb6ac3374a80eae47aa
+      lastState: {}
+      name: fleet-monitor
+      ready: false
+      resources:
+        limits:
+          cpu: 100m
+          memory: 128Mi
+        requests:
+          cpu: 25m
+          memory: 64Mi
+      restartCount: 0
+      started: false
+      state:
+        terminated:
+          containerID: containerd://bfb9d65da45c1a9031c40674ce7a023500675c90fd3ad093c3d27f8474b3d387
+          exitCode: 0
+          finishedAt: "2026-08-05T17:16:10Z"
+          reason: Completed
+          startedAt: "2026-08-05T17:16:09Z"
+      user:
+        linux:
+          gid: 10001
+          supplementalGroups:
+          - 10001
+          uid: 10001
+      volumeMounts:
+      - mountPath: /tmp
+        name: tmp
+      - mountPath: /reports
+        name: reports
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-rmmx9
+        readOnly: true
+        recursiveReadOnly: Disabled
+    hostIP: 172.18.0.3
+    hostIPs:
+    - ip: 172.18.0.3
+    observedGeneration: 1
+    phase: Succeeded
+    podIP: 10.244.2.11
+    podIPs:
+    - ip: 10.244.2.11
+    qosClass: Burstable
+    resources:
+      limits:
+        cpu: 100m
+        memory: 128Mi
+      requests:
+        memory: 64Mi
+    startTime: "2026-08-05T17:16:07Z"
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    creationTimestamp: "2026-08-05T17:33:58Z"
+    generateName: rider-55ccb94bc-
+    generation: 1
+    labels:
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/name: rider
+      pod-template-hash: 55ccb94bc
+    name: rider-55ccb94bc-drpkr
+    namespace: veloshare
+    ownerReferences:
+    - apiVersion: apps/v1
+      blockOwnerDeletion: true
+      controller: true
+      kind: ReplicaSet
+      name: rider-55ccb94bc
+      uid: 97934822-9898-4ba1-a7b8-1286ad2f8793
+    resourceVersion: "78673"
+    uid: fe1a0133-34e4-4d75-86c9-d1be558210a6
+  spec:
+    containers:
+    - env:
+      - name: PYTHONDONTWRITEBYTECODE
+        value: "1"
+      envFrom:
+      - secretRef:
+          name: rider-db
+      - secretRef:
+          name: veloshare-auth
+      image: veloshare/rider:0.1.0
+      imagePullPolicy: IfNotPresent
+      livenessProbe:
+        failureThreshold: 3
+        httpGet:
+          path: /healthz
+          port: 8000
+          scheme: HTTP
+        initialDelaySeconds: 5
+        periodSeconds: 10
+        successThreshold: 1
+        timeoutSeconds: 2
+      name: rider
+      ports:
+      - containerPort: 8000
+        name: http
+        protocol: TCP
+      readinessProbe:
+        failureThreshold: 3
+        httpGet:
+          path: /healthz
+          port: 8000
+          scheme: HTTP
+        initialDelaySeconds: 5
+        periodSeconds: 10
+        successThreshold: 1
+        timeoutSeconds: 2
+      resources:
+        limits:
+          cpu: 150m
+          memory: 192Mi
+        requests:
+          cpu: 25m
+          memory: 96Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        readOnlyRootFilesystem: true
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+      terminationMessagePath: /dev/termination-log
+      terminationMessagePolicy: File
+      volumeMounts:
+      - mountPath: /var/log/veloshare
+        name: logs
+      - mountPath: /tmp
+        name: tmp
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-h57rg
+        readOnly: true
+    - image: nginxinc/nginx-unprivileged:1.27-alpine
+      imagePullPolicy: IfNotPresent
+      name: ambassador
+      ports:
+      - containerPort: 8080
+        name: ambassador
+        protocol: TCP
+      resources:
+        limits:
+          cpu: 50m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        readOnlyRootFilesystem: true
+        runAsGroup: 101
+        runAsNonRoot: true
+        runAsUser: 101
+      terminationMessagePath: /dev/termination-log
+      terminationMessagePolicy: File
+      volumeMounts:
+      - mountPath: /etc/nginx/conf.d/default.conf
+        name: ambassador-config
+        readOnly: true
+        subPath: default.conf
+      - mountPath: /tmp
+        name: ambassador-tmp
+      - mountPath: /var/cache/nginx
+        name: ambassador-cache
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-h57rg
+        readOnly: true
+    - image: fluent/fluent-bit:3.1.9
+      imagePullPolicy: IfNotPresent
+      name: log-agent
+      resources:
+        limits:
+          cpu: 50m
+          memory: 96Mi
+        requests:
+          cpu: 10m
+          memory: 48Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        readOnlyRootFilesystem: true
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      terminationMessagePath: /dev/termination-log
+      terminationMessagePolicy: File
+      volumeMounts:
+      - mountPath: /var/log/veloshare
+        name: logs
+        readOnly: true
+      - mountPath: /fluent-bit/etc/
+        name: fluent-bit-config
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-h57rg
+        readOnly: true
+    dnsPolicy: ClusterFirst
+    enableServiceLinks: true
+    initContainers:
+    - command:
+      - sh
+      - -c
+      - |
+        for name in DB_PASSWORD JWT_SECRET ADMIN_EMAIL ADMIN_PASSWORD; do
+          eval "val=\$$name"
+          if [ -z "$val" ]; then
+            echo "config check failed: required env var $name is not set" >&2
+            exit 1
+          fi
+        done
+        echo "config check passed: all required env vars present"
+      envFrom:
+      - secretRef:
+          name: rider-db
+      - secretRef:
+          name: veloshare-auth
+      image: alpine:3.20
+      imagePullPolicy: IfNotPresent
+      name: config-check
+      resources:
+        limits:
+          cpu: 50m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        readOnlyRootFilesystem: true
+        runAsGroup: 65534
+        runAsNonRoot: true
+        runAsUser: 65534
+      terminationMessagePath: /dev/termination-log
+      terminationMessagePolicy: File
+      volumeMounts:
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-h57rg
+        readOnly: true
+    - command:
+      - sh
+      - -c
+      - PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME
+        -v ON_ERROR_STOP=1 -f /migrations/migrate.sql
+      envFrom:
+      - secretRef:
+          name: rider-db
+      image: postgres:16
+      imagePullPolicy: IfNotPresent
+      name: migrate
+      resources:
+        limits:
+          cpu: 200m
+          memory: 128Mi
+        requests:
+          cpu: 25m
+          memory: 64Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        readOnlyRootFilesystem: true
+        runAsGroup: 999
+        runAsNonRoot: true
+        runAsUser: 999
+      terminationMessagePath: /dev/termination-log
+      terminationMessagePolicy: File
+      volumeMounts:
+      - mountPath: /migrations
+        name: migration
+      - mountPath: /tmp
+        name: tmp
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-h57rg
+        readOnly: true
+    nodeName: veloshare-worker2
+    preemptionPolicy: PreemptLowerPriority
+    priority: 0
+    restartPolicy: Always
+    schedulerName: default-scheduler
+    securityContext:
+      fsGroup: 10001
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+    serviceAccount: default
+    serviceAccountName: default
+    terminationGracePeriodSeconds: 30
+    tolerations:
+    - effect: NoExecute
+      key: node.kubernetes.io/not-ready
+      operator: Exists
+      tolerationSeconds: 300
+    - effect: NoExecute
+      key: node.kubernetes.io/unreachable
+      operator: Exists
+      tolerationSeconds: 300
+    volumes:
+    - emptyDir: {}
+      name: tmp
+    - configMap:
+        defaultMode: 420
+        name: rider-migration
+      name: migration
+    - configMap:
+        defaultMode: 420
+        name: rider-ambassador
+      name: ambassador-config
+    - emptyDir: {}
+      name: ambassador-tmp
+    - emptyDir: {}
+      name: ambassador-cache
+    - emptyDir: {}
+      name: logs
+    - configMap:
+        defaultMode: 420
+        name: fluent-bit-config
+      name: fluent-bit-config
+    - name: kube-api-access-h57rg
+      projected:
+        defaultMode: 420
+        sources:
+        - serviceAccountToken:
+            expirationSeconds: 3607
+            path: token
+        - configMap:
+            items:
+            - key: ca.crt
+              path: ca.crt
+            name: kube-root-ca.crt
+        - downwardAPI:
+            items:
+            - fieldRef:
+                apiVersion: v1
+                fieldPath: metadata.namespace
+              path: namespace
+  status:
+    allocatedResources:
+      cpu: 45m
+      memory: 176Mi
+    conditions:
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T17:33:58Z"
+      observedGeneration: 1
+      status: "True"
+      type: PodReadyToStartContainers
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T17:34:01Z"
+      observedGeneration: 1
+      status: "True"
+      type: Initialized
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T17:34:24Z"
+      observedGeneration: 1
+      status: "True"
+      type: Ready
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T17:34:24Z"
+      observedGeneration: 1
+      status: "True"
+      type: ContainersReady
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T17:33:58Z"
+      observedGeneration: 1
+      status: "True"
+      type: PodScheduled
+    containerStatuses:
+    - allocatedResources:
+        cpu: 10m
+        memory: 32Mi
+      containerID: containerd://d94c4347f9e5f5f6ff93caeb4441e9838b2d7e544b732ad1786716ddc3adcfd6
+      image: docker.io/nginxinc/nginx-unprivileged:1.27-alpine
+      imageID: docker.io/nginxinc/nginx-unprivileged@sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0
+      lastState: {}
+      name: ambassador
+      ready: true
+      resources:
+        limits:
+          cpu: 50m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      restartCount: 0
+      started: true
+      state:
+        running:
+          startedAt: "2026-08-05T17:34:02Z"
+      user:
+        linux:
+          gid: 101
+          supplementalGroups:
+          - 101
+          - 10001
+          uid: 101
+      volumeMounts:
+      - mountPath: /etc/nginx/conf.d/default.conf
+        name: ambassador-config
+        readOnly: true
+        recursiveReadOnly: Disabled
+      - mountPath: /tmp
+        name: ambassador-tmp
+      - mountPath: /var/cache/nginx
+        name: ambassador-cache
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-h57rg
+        readOnly: true
+        recursiveReadOnly: Disabled
+    - allocatedResources:
+        cpu: 10m
+        memory: 48Mi
+      containerID: containerd://39b057b451c2b2b457af6eedc702e8d094a1fd7b3d30988e273a7cf24cc3d7b7
+      image: docker.io/fluent/fluent-bit:3.1.9
+      imageID: docker.io/fluent/fluent-bit@sha256:4af3920cc2ff976200e0fc09f23e7ca4ee7d4477a6d592cb496fc39378181b02
+      lastState: {}
+      name: log-agent
+      ready: true
+      resources:
+        limits:
+          cpu: 50m
+          memory: 96Mi
+        requests:
+          cpu: 10m
+          memory: 48Mi
+      restartCount: 0
+      started: true
+      state:
+        running:
+          startedAt: "2026-08-05T17:34:03Z"
+      user:
+        linux:
+          gid: 1000
+          supplementalGroups:
+          - 1000
+          - 10001
+          uid: 1000
+      volumeMounts:
+      - mountPath: /var/log/veloshare
+        name: logs
+        readOnly: true
+        recursiveReadOnly: Disabled
+      - mountPath: /fluent-bit/etc/
+        name: fluent-bit-config
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-h57rg
+        readOnly: true
+        recursiveReadOnly: Disabled
+    - allocatedResources:
+        cpu: 25m
+        memory: 96Mi
+      containerID: containerd://50aefe70d630008a5fc5425b5f8f89f1ec58ad50242d04b14ffb680763fa3065
+      image: docker.io/veloshare/rider:0.1.0
+      imageID: docker.io/library/import-2026-08-05@sha256:1c6fa2c0912ac770d4c7a523e9e3a7a647b223885987bfffc8d72bae7ff87a16
+      lastState: {}
+      name: rider
+      ready: true
+      resources:
+        limits:
+          cpu: 150m
+          memory: 192Mi
+        requests:
+          cpu: 25m
+          memory: 96Mi
+      restartCount: 0
+      started: true
+      state:
+        running:
+          startedAt: "2026-08-05T17:34:01Z"
+      user:
+        linux:
+          gid: 10001
+          supplementalGroups:
+          - 10001
+          uid: 10001
+      volumeMounts:
+      - mountPath: /var/log/veloshare
+        name: logs
+      - mountPath: /tmp
+        name: tmp
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-h57rg
+        readOnly: true
+        recursiveReadOnly: Disabled
+    hostIP: 172.18.0.3
+    hostIPs:
+    - ip: 172.18.0.3
+    initContainerStatuses:
+    - allocatedResources:
+        cpu: 10m
+        memory: 32Mi
+      containerID: containerd://e2b0ea9720df0d18bff2c1d93d429e6e117d582deea6ecb70530fb7e346cdcd5
+      image: docker.io/library/alpine:3.20
+      imageID: docker.io/library/alpine@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+      lastState: {}
+      name: config-check
+      ready: true
+      resources:
+        limits:
+          cpu: 50m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      restartCount: 0
+      started: false
+      state:
+        terminated:
+          containerID: containerd://e2b0ea9720df0d18bff2c1d93d429e6e117d582deea6ecb70530fb7e346cdcd5
+          exitCode: 0
+          finishedAt: "2026-08-05T17:33:59Z"
+          reason: Completed
+          startedAt: "2026-08-05T17:33:59Z"
+      user:
+        linux:
+          gid: 65534
+          supplementalGroups:
+          - 10001
+          - 65534
+          uid: 65534
+      volumeMounts:
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-h57rg
+        readOnly: true
+        recursiveReadOnly: Disabled
+    - allocatedResources:
+        cpu: 25m
+        memory: 64Mi
+      containerID: containerd://57a802a915da5c21fce54c29410976d8c77292758449580bb291998ec64acd28
+      image: docker.io/library/postgres:16
+      imageID: docker.io/library/postgres@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
+      lastState: {}
+      name: migrate
+      ready: true
+      resources:
+        limits:
+          cpu: 200m
+          memory: 128Mi
+        requests:
+          cpu: 25m
+          memory: 64Mi
+      restartCount: 0
+      started: false
+      state:
+        terminated:
+          containerID: containerd://57a802a915da5c21fce54c29410976d8c77292758449580bb291998ec64acd28
+          exitCode: 0
+          finishedAt: "2026-08-05T17:34:01Z"
+          reason: Completed
+          startedAt: "2026-08-05T17:34:00Z"
+      user:
+        linux:
+          gid: 999
+          supplementalGroups:
+          - 101
+          - 999
+          - 10001
+          uid: 999
+      volumeMounts:
+      - mountPath: /migrations
+        name: migration
+      - mountPath: /tmp
+        name: tmp
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-h57rg
+        readOnly: true
+        recursiveReadOnly: Disabled
+    observedGeneration: 1
+    phase: Running
+    podIP: 10.244.2.22
+    podIPs:
+    - ip: 10.244.2.22
+    qosClass: Burstable
+    resources:
+      limits:
+        cpu: 250m
+        memory: 352Mi
+      requests:
+        cpu: 28m
+        memory: 176Mi
+    startTime: "2026-08-05T17:33:58Z"
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    creationTimestamp: "2026-08-05T15:33:08Z"
+    generateName: station-5b78f8dfff-
+    generation: 1
+    labels:
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/name: station
+      pod-template-hash: 5b78f8dfff
+    name: station-5b78f8dfff-4kw5z
+    namespace: veloshare
+    ownerReferences:
+    - apiVersion: apps/v1
+      blockOwnerDeletion: true
+      controller: true
+      kind: ReplicaSet
+      name: station-5b78f8dfff
+      uid: 9d05ac9e-db40-4717-a300-da295da60f39
+    resourceVersion: "75034"
+    uid: 7fab2488-00ad-40cc-babf-94128a81a3a7
+  spec:
+    containers:
+    - env:
+      - name: PYTHONDONTWRITEBYTECODE
+        value: "1"
+      envFrom:
+      - secretRef:
+          name: station-db
+      image: veloshare/station:0.1.0
+      imagePullPolicy: IfNotPresent
+      livenessProbe:
+        failureThreshold: 3
+        httpGet:
+          path: /healthz
+          port: 8000
+          scheme: HTTP
+        initialDelaySeconds: 5
+        periodSeconds: 10
+        successThreshold: 1
+        timeoutSeconds: 2
+      name: station
+      ports:
+      - containerPort: 8000
+        name: http
+        protocol: TCP
+      readinessProbe:
+        failureThreshold: 3
+        httpGet:
+          path: /healthz
+          port: 8000
+          scheme: HTTP
+        initialDelaySeconds: 5
+        periodSeconds: 10
+        successThreshold: 1
+        timeoutSeconds: 2
+      resources:
+        limits:
+          cpu: 150m
+          memory: 192Mi
+        requests:
+          cpu: 25m
+          memory: 96Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        readOnlyRootFilesystem: true
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+      terminationMessagePath: /dev/termination-log
+      terminationMessagePolicy: File
+      volumeMounts:
+      - mountPath: /var/log/veloshare
+        name: logs
+      - mountPath: /tmp
+        name: tmp
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-7djk8
+        readOnly: true
+    - image: nginxinc/nginx-unprivileged:1.27-alpine
+      imagePullPolicy: IfNotPresent
+      name: ambassador
+      ports:
+      - containerPort: 8080
+        name: ambassador
+        protocol: TCP
+      resources:
+        limits:
+          cpu: 50m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        readOnlyRootFilesystem: true
+        runAsGroup: 101
+        runAsNonRoot: true
+        runAsUser: 101
+      terminationMessagePath: /dev/termination-log
+      terminationMessagePolicy: File
+      volumeMounts:
+      - mountPath: /etc/nginx/conf.d/default.conf
+        name: ambassador-config
+        readOnly: true
+        subPath: default.conf
+      - mountPath: /tmp
+        name: ambassador-tmp
+      - mountPath: /var/cache/nginx
+        name: ambassador-cache
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-7djk8
+        readOnly: true
+    - image: fluent/fluent-bit:3.1.9
+      imagePullPolicy: IfNotPresent
+      name: log-agent
+      resources:
+        limits:
+          cpu: 50m
+          memory: 96Mi
+        requests:
+          cpu: 10m
+          memory: 48Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        readOnlyRootFilesystem: true
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      terminationMessagePath: /dev/termination-log
+      terminationMessagePolicy: File
+      volumeMounts:
+      - mountPath: /var/log/veloshare
+        name: logs
+        readOnly: true
+      - mountPath: /fluent-bit/etc/
+        name: fluent-bit-config
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-7djk8
+        readOnly: true
+    dnsPolicy: ClusterFirst
+    enableServiceLinks: true
+    initContainers:
+    - command:
+      - sh
+      - -c
+      - |
+        for name in DB_PASSWORD; do
+          eval "val=\$$name"
+          if [ -z "$val" ]; then
+            echo "config check failed: required env var $name is not set" >&2
+            exit 1
+          fi
+        done
+        echo "config check passed: all required env vars present"
+      envFrom:
+      - secretRef:
+          name: station-db
+      image: alpine:3.20
+      imagePullPolicy: IfNotPresent
+      name: config-check
+      resources:
+        limits:
+          cpu: 50m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        readOnlyRootFilesystem: true
+        runAsGroup: 65534
+        runAsNonRoot: true
+        runAsUser: 65534
+      terminationMessagePath: /dev/termination-log
+      terminationMessagePolicy: File
+      volumeMounts:
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-7djk8
+        readOnly: true
+    - command:
+      - sh
+      - -c
+      - |
+        PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -f /migrations/migrate.sql
+      envFrom:
+      - secretRef:
+          name: station-db
+      image: postgres:16
+      imagePullPolicy: IfNotPresent
+      name: migrate
+      resources:
+        limits:
+          cpu: 200m
+          memory: 128Mi
+        requests:
+          cpu: 25m
+          memory: 64Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        readOnlyRootFilesystem: true
+        runAsGroup: 999
+        runAsNonRoot: true
+        runAsUser: 999
+      terminationMessagePath: /dev/termination-log
+      terminationMessagePolicy: File
+      volumeMounts:
+      - mountPath: /migrations
+        name: migration
+        readOnly: true
+      - mountPath: /tmp
+        name: tmp
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-7djk8
+        readOnly: true
+    nodeName: veloshare-worker
+    preemptionPolicy: PreemptLowerPriority
+    priority: 0
+    restartPolicy: Always
+    schedulerName: default-scheduler
+    securityContext:
+      fsGroup: 10001
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+    serviceAccount: default
+    serviceAccountName: default
+    terminationGracePeriodSeconds: 30
+    tolerations:
+    - effect: NoExecute
+      key: node.kubernetes.io/not-ready
+      operator: Exists
+      tolerationSeconds: 300
+    - effect: NoExecute
+      key: node.kubernetes.io/unreachable
+      operator: Exists
+      tolerationSeconds: 300
+    volumes:
+    - emptyDir: {}
+      name: tmp
+    - configMap:
+        defaultMode: 420
+        name: station-migration
+      name: migration
+    - configMap:
+        defaultMode: 420
+        name: station-ambassador
+      name: ambassador-config
+    - emptyDir: {}
+      name: ambassador-tmp
+    - emptyDir: {}
+      name: ambassador-cache
+    - emptyDir: {}
+      name: logs
+    - configMap:
+        defaultMode: 420
+        name: fluent-bit-config
+      name: fluent-bit-config
+    - name: kube-api-access-7djk8
+      projected:
+        defaultMode: 420
+        sources:
+        - serviceAccountToken:
+            expirationSeconds: 3607
+            path: token
+        - configMap:
+            items:
+            - key: ca.crt
+              path: ca.crt
+            name: kube-root-ca.crt
+        - downwardAPI:
+            items:
+            - fieldRef:
+                apiVersion: v1
+                fieldPath: metadata.namespace
+              path: namespace
+  status:
+    allocatedResources:
+      cpu: 45m
+      memory: 176Mi
+    conditions:
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T17:05:50Z"
+      observedGeneration: 1
+      status: "True"
+      type: PodReadyToStartContainers
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T15:34:04Z"
+      observedGeneration: 1
+      status: "True"
+      type: Initialized
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T17:07:07Z"
+      observedGeneration: 1
+      status: "True"
+      type: Ready
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T17:07:07Z"
+      observedGeneration: 1
+      status: "True"
+      type: ContainersReady
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T15:33:09Z"
+      observedGeneration: 1
+      status: "True"
+      type: PodScheduled
+    containerStatuses:
+    - allocatedResources:
+        cpu: 10m
+        memory: 32Mi
+      containerID: containerd://44e5d64a904020de119c3c4ddbb03bfa779e896841456358057c87ca08e4366a
+      image: docker.io/nginxinc/nginx-unprivileged:1.27-alpine
+      imageID: docker.io/nginxinc/nginx-unprivileged@sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0
+      lastState:
+        terminated:
+          containerID: containerd://cefe571c3e9e5162217d7fca82d8201b42986378d06c26f28d100784cbca4fe4
+          exitCode: 255
+          finishedAt: "2026-08-05T17:05:44Z"
+          reason: Unknown
+          startedAt: "2026-08-05T15:34:12Z"
+      name: ambassador
+      ready: true
+      resources:
+        limits:
+          cpu: 50m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      restartCount: 1
+      started: true
+      state:
+        running:
+          startedAt: "2026-08-05T17:06:45Z"
+      user:
+        linux:
+          gid: 101
+          supplementalGroups:
+          - 101
+          - 10001
+          uid: 101
+      volumeMounts:
+      - mountPath: /etc/nginx/conf.d/default.conf
+        name: ambassador-config
+        readOnly: true
+        recursiveReadOnly: Disabled
+      - mountPath: /tmp
+        name: ambassador-tmp
+      - mountPath: /var/cache/nginx
+        name: ambassador-cache
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-7djk8
+        readOnly: true
+        recursiveReadOnly: Disabled
+    - allocatedResources:
+        cpu: 10m
+        memory: 48Mi
+      containerID: containerd://21541063264f7457288ebee71c8d697d042fc1d6f0913ab177fcd21f67b94807
+      image: docker.io/fluent/fluent-bit:3.1.9
+      imageID: docker.io/fluent/fluent-bit@sha256:4af3920cc2ff976200e0fc09f23e7ca4ee7d4477a6d592cb496fc39378181b02
+      lastState:
+        terminated:
+          containerID: containerd://d9da751778437316889cd454445e28cc132d668f30ffc667fcc18b7272eaec62
+          exitCode: 255
+          finishedAt: "2026-08-05T17:05:44Z"
+          reason: Unknown
+          startedAt: "2026-08-05T15:34:17Z"
+      name: log-agent
+      ready: true
+      resources:
+        limits:
+          cpu: 50m
+          memory: 96Mi
+        requests:
+          cpu: 10m
+          memory: 48Mi
+      restartCount: 1
+      started: true
+      state:
+        running:
+          startedAt: "2026-08-05T17:06:46Z"
+      user:
+        linux:
+          gid: 1000
+          supplementalGroups:
+          - 1000
+          - 10001
+          uid: 1000
+      volumeMounts:
+      - mountPath: /var/log/veloshare
+        name: logs
+        readOnly: true
+        recursiveReadOnly: Disabled
+      - mountPath: /fluent-bit/etc/
+        name: fluent-bit-config
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-7djk8
+        readOnly: true
+        recursiveReadOnly: Disabled
+    - allocatedResources:
+        cpu: 25m
+        memory: 96Mi
+      containerID: containerd://338fac9ea2c5e957a5c4b7a62a714a8ba57909b40355626dbbcdc863496d6937
+      image: docker.io/veloshare/station:0.1.0
+      imageID: docker.io/library/import-2026-08-05@sha256:a4bc5f86c787d754a213a5ff487a0ec54e5f65cd731aa5a247ba8c53f589d8cd
+      lastState:
+        terminated:
+          containerID: containerd://12275c53cddb152abab2769b6a054380e814f60841050f6b0242bbbd46380e62
+          exitCode: 137
+          finishedAt: "2026-08-05T15:42:15Z"
+          reason: Error
+          startedAt: "2026-08-05T15:41:15Z"
+      name: station
+      ready: true
+      resources:
+        limits:
+          cpu: 150m
+          memory: 192Mi
+        requests:
+          cpu: 25m
+          memory: 96Mi
+      restartCount: 7
+      started: true
+      state:
+        running:
+          startedAt: "2026-08-05T17:06:43Z"
+      user:
+        linux:
+          gid: 10001
+          supplementalGroups:
+          - 10001
+          uid: 10001
+      volumeMounts:
+      - mountPath: /var/log/veloshare
+        name: logs
+      - mountPath: /tmp
+        name: tmp
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-7djk8
+        readOnly: true
+        recursiveReadOnly: Disabled
+    hostIP: 172.18.0.4
+    hostIPs:
+    - ip: 172.18.0.4
+    initContainerStatuses:
+    - allocatedResources:
+        cpu: 10m
+        memory: 32Mi
+      containerID: containerd://397b13cafa2082f1264e640df444fce649e42c7e27088a2dcaa0c2dee2680e32
+      image: docker.io/library/alpine:3.20
+      imageID: docker.io/library/alpine@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+      lastState:
+        terminated:
+          containerID: containerd://feab782b8e221486ba43c9b045cd108bd6f65dc8f7e15c6b4010f9d3081b2e51
+          exitCode: 0
+          finishedAt: "2026-08-05T15:33:29Z"
+          reason: Completed
+          startedAt: "2026-08-05T15:33:29Z"
+      name: config-check
+      ready: true
+      resources:
+        limits:
+          cpu: 50m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      restartCount: 1
+      started: false
+      state:
+        terminated:
+          containerID: containerd://397b13cafa2082f1264e640df444fce649e42c7e27088a2dcaa0c2dee2680e32
+          exitCode: 0
+          finishedAt: "2026-08-05T17:05:51Z"
+          reason: Completed
+          startedAt: "2026-08-05T17:05:51Z"
+      user:
+        linux:
+          gid: 65534
+          supplementalGroups:
+          - 10001
+          - 65534
+          uid: 65534
+      volumeMounts:
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-7djk8
+        readOnly: true
+        recursiveReadOnly: Disabled
+    - allocatedResources:
+        cpu: 25m
+        memory: 64Mi
+      containerID: containerd://6e9d60b9c547f7098c646aec425d2f7ed059fba2778dc9de5717fcee83859285
+      image: docker.io/library/postgres:16
+      imageID: docker.io/library/postgres@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
+      lastState:
+        terminated:
+          containerID: containerd://a9c78f6c765ee3f68de7c59c6638d593dcfa9e4bbc53d312027900f28fa31d60
+          exitCode: 2
+          finishedAt: "2026-08-05T17:06:28Z"
+          reason: Error
+          startedAt: "2026-08-05T17:06:14Z"
+      name: migrate
+      ready: true
+      resources:
+        limits:
+          cpu: 200m
+          memory: 128Mi
+        requests:
+          cpu: 25m
+          memory: 64Mi
+      restartCount: 4
+      started: false
+      state:
+        terminated:
+          containerID: containerd://6e9d60b9c547f7098c646aec425d2f7ed059fba2778dc9de5717fcee83859285
+          exitCode: 0
+          finishedAt: "2026-08-05T17:06:42Z"
+          reason: Completed
+          startedAt: "2026-08-05T17:06:41Z"
+      user:
+        linux:
+          gid: 999
+          supplementalGroups:
+          - 101
+          - 999
+          - 10001
+          uid: 999
+      volumeMounts:
+      - mountPath: /migrations
+        name: migration
+        readOnly: true
+        recursiveReadOnly: Disabled
+      - mountPath: /tmp
+        name: tmp
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-7djk8
+        readOnly: true
+        recursiveReadOnly: Disabled
+    observedGeneration: 1
+    phase: Running
+    podIP: 10.244.1.2
+    podIPs:
+    - ip: 10.244.1.2
+    qosClass: Burstable
+    resources:
+      limits:
+        cpu: 250m
+        memory: 352Mi
+      requests:
+        cpu: 28m
+        memory: 176Mi
+    startTime: "2026-08-05T15:33:10Z"
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    creationTimestamp: "2026-08-05T15:33:08Z"
+    generateName: trip-6cb444668-
+    generation: 1
+    labels:
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/name: trip
+      pod-template-hash: 6cb444668
+    name: trip-6cb444668-rx9fc
+    namespace: veloshare
+    ownerReferences:
+    - apiVersion: apps/v1
+      blockOwnerDeletion: true
+      controller: true
+      kind: ReplicaSet
+      name: trip-6cb444668
+      uid: 7697da18-4707-4769-a3a5-c53fa76c8d09
+    resourceVersion: "75039"
+    uid: 01d397e1-67f4-4263-b9a6-d30ed9e138c7
+  spec:
+    containers:
+    - env:
+      - name: PYTHONDONTWRITEBYTECODE
+        value: "1"
+      envFrom:
+      - secretRef:
+          name: trip-db
+      - configMapRef:
+          name: trip
+      - secretRef:
+          name: veloshare-auth
+      image: veloshare/trip:0.1.0
+      imagePullPolicy: IfNotPresent
+      livenessProbe:
+        failureThreshold: 3
+        httpGet:
+          path: /healthz
+          port: 8000
+          scheme: HTTP
+        initialDelaySeconds: 5
+        periodSeconds: 10
+        successThreshold: 1
+        timeoutSeconds: 2
+      name: trip
+      ports:
+      - containerPort: 8000
+        name: http
+        protocol: TCP
+      readinessProbe:
+        failureThreshold: 3
+        httpGet:
+          path: /healthz
+          port: 8000
+          scheme: HTTP
+        initialDelaySeconds: 5
+        periodSeconds: 10
+        successThreshold: 1
+        timeoutSeconds: 2
+      resources:
+        limits:
+          cpu: 150m
+          memory: 192Mi
+        requests:
+          cpu: 25m
+          memory: 96Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        readOnlyRootFilesystem: true
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+      terminationMessagePath: /dev/termination-log
+      terminationMessagePolicy: File
+      volumeMounts:
+      - mountPath: /var/log/veloshare
+        name: logs
+      - mountPath: /tmp
+        name: tmp
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-65548
+        readOnly: true
+    - image: nginxinc/nginx-unprivileged:1.27-alpine
+      imagePullPolicy: IfNotPresent
+      name: ambassador
+      ports:
+      - containerPort: 8080
+        name: ambassador
+        protocol: TCP
+      resources:
+        limits:
+          cpu: 50m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        readOnlyRootFilesystem: true
+        runAsGroup: 101
+        runAsNonRoot: true
+        runAsUser: 101
+      terminationMessagePath: /dev/termination-log
+      terminationMessagePolicy: File
+      volumeMounts:
+      - mountPath: /etc/nginx/conf.d/default.conf
+        name: ambassador-config
+        readOnly: true
+        subPath: default.conf
+      - mountPath: /tmp
+        name: ambassador-tmp
+      - mountPath: /var/cache/nginx
+        name: ambassador-cache
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-65548
+        readOnly: true
+    - image: fluent/fluent-bit:3.1.9
+      imagePullPolicy: IfNotPresent
+      name: log-agent
+      resources:
+        limits:
+          cpu: 50m
+          memory: 96Mi
+        requests:
+          cpu: 10m
+          memory: 48Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        readOnlyRootFilesystem: true
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      terminationMessagePath: /dev/termination-log
+      terminationMessagePolicy: File
+      volumeMounts:
+      - mountPath: /var/log/veloshare
+        name: logs
+        readOnly: true
+      - mountPath: /fluent-bit/etc/
+        name: fluent-bit-config
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-65548
+        readOnly: true
+    dnsPolicy: ClusterFirst
+    enableServiceLinks: true
+    initContainers:
+    - command:
+      - sh
+      - -c
+      - |
+        for name in DB_PASSWORD JWT_SECRET; do
+          eval "val=\$$name"
+          if [ -z "$val" ]; then
+            echo "config check failed: required env var $name is not set" >&2
+            exit 1
+          fi
+        done
+        echo "config check passed: all required env vars present"
+      envFrom:
+      - secretRef:
+          name: trip-db
+      - configMapRef:
+          name: trip
+      - secretRef:
+          name: veloshare-auth
+      image: alpine:3.20
+      imagePullPolicy: IfNotPresent
+      name: config-check
+      resources:
+        limits:
+          cpu: 50m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        readOnlyRootFilesystem: true
+        runAsGroup: 65534
+        runAsNonRoot: true
+        runAsUser: 65534
+      terminationMessagePath: /dev/termination-log
+      terminationMessagePolicy: File
+      volumeMounts:
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-65548
+        readOnly: true
+    - command:
+      - sh
+      - -c
+      - PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME
+        -f /migrations/migrate.sql
+      envFrom:
+      - secretRef:
+          name: trip-db
+      image: postgres:16
+      imagePullPolicy: IfNotPresent
+      name: migrate
+      resources:
+        limits:
+          cpu: 200m
+          memory: 128Mi
+        requests:
+          cpu: 25m
+          memory: 64Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        readOnlyRootFilesystem: true
+        runAsGroup: 999
+        runAsNonRoot: true
+        runAsUser: 999
+      terminationMessagePath: /dev/termination-log
+      terminationMessagePolicy: File
+      volumeMounts:
+      - mountPath: /migrations
+        name: migration
+      - mountPath: /tmp
+        name: tmp
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-65548
+        readOnly: true
+    nodeName: veloshare-worker2
+    preemptionPolicy: PreemptLowerPriority
+    priority: 0
+    restartPolicy: Always
+    schedulerName: default-scheduler
+    securityContext:
+      fsGroup: 10001
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+    serviceAccount: default
+    serviceAccountName: default
+    terminationGracePeriodSeconds: 30
+    tolerations:
+    - effect: NoExecute
+      key: node.kubernetes.io/not-ready
+      operator: Exists
+      tolerationSeconds: 300
+    - effect: NoExecute
+      key: node.kubernetes.io/unreachable
+      operator: Exists
+      tolerationSeconds: 300
+    volumes:
+    - emptyDir: {}
+      name: tmp
+    - configMap:
+        defaultMode: 420
+        name: trip-migration
+      name: migration
+    - configMap:
+        defaultMode: 420
+        name: trip-ambassador
+      name: ambassador-config
+    - emptyDir: {}
+      name: ambassador-tmp
+    - emptyDir: {}
+      name: ambassador-cache
+    - emptyDir: {}
+      name: logs
+    - configMap:
+        defaultMode: 420
+        name: fluent-bit-config
+      name: fluent-bit-config
+    - name: kube-api-access-65548
+      projected:
+        defaultMode: 420
+        sources:
+        - serviceAccountToken:
+            expirationSeconds: 3607
+            path: token
+        - configMap:
+            items:
+            - key: ca.crt
+              path: ca.crt
+            name: kube-root-ca.crt
+        - downwardAPI:
+            items:
+            - fieldRef:
+                apiVersion: v1
+                fieldPath: metadata.namespace
+              path: namespace
+  status:
+    allocatedResources:
+      cpu: 45m
+      memory: 176Mi
+    conditions:
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T17:05:50Z"
+      observedGeneration: 1
+      status: "True"
+      type: PodReadyToStartContainers
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T15:34:13Z"
+      observedGeneration: 1
+      status: "True"
+      type: Initialized
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T17:07:07Z"
+      observedGeneration: 1
+      status: "True"
+      type: Ready
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T17:07:07Z"
+      observedGeneration: 1
+      status: "True"
+      type: ContainersReady
+    - lastProbeTime: null
+      lastTransitionTime: "2026-08-05T15:33:09Z"
+      observedGeneration: 1
+      status: "True"
+      type: PodScheduled
+    containerStatuses:
+    - allocatedResources:
+        cpu: 10m
+        memory: 32Mi
+      containerID: containerd://3f395d38d27744f6cc58a393fb21bdd7ffe690acea4ff177d193a2f563af9954
+      image: docker.io/nginxinc/nginx-unprivileged:1.27-alpine
+      imageID: docker.io/nginxinc/nginx-unprivileged@sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0
+      lastState:
+        terminated:
+          containerID: containerd://ea3faf898c1cf2a334adc65c3bec9f576162fe1832778c41989ce462ce898568
+          exitCode: 255
+          finishedAt: "2026-08-05T17:05:44Z"
+          reason: Unknown
+          startedAt: "2026-08-05T15:34:20Z"
+      name: ambassador
+      ready: true
+      resources:
+        limits:
+          cpu: 50m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      restartCount: 1
+      started: true
+      state:
+        running:
+          startedAt: "2026-08-05T17:06:44Z"
+      user:
+        linux:
+          gid: 101
+          supplementalGroups:
+          - 101
+          - 10001
+          uid: 101
+      volumeMounts:
+      - mountPath: /etc/nginx/conf.d/default.conf
+        name: ambassador-config
+        readOnly: true
+        recursiveReadOnly: Disabled
+      - mountPath: /tmp
+        name: ambassador-tmp
+      - mountPath: /var/cache/nginx
+        name: ambassador-cache
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-65548
+        readOnly: true
+        recursiveReadOnly: Disabled
+    - allocatedResources:
+        cpu: 10m
+        memory: 48Mi
+      containerID: containerd://b17f0bd96462e1e1bc3e40d04886aec7b5246a33a2387ec6f5a0d3b216208d99
+      image: docker.io/fluent/fluent-bit:3.1.9
+      imageID: docker.io/fluent/fluent-bit@sha256:4af3920cc2ff976200e0fc09f23e7ca4ee7d4477a6d592cb496fc39378181b02
+      lastState:
+        terminated:
+          containerID: containerd://e33a5e1043e892544a4c31496f33383ebda1bed74818b64969b55a77fd76b609
+          exitCode: 255
+          finishedAt: "2026-08-05T17:05:44Z"
+          reason: Unknown
+          startedAt: "2026-08-05T15:34:26Z"
+      name: log-agent
+      ready: true
+      resources:
+        limits:
+          cpu: 50m
+          memory: 96Mi
+        requests:
+          cpu: 10m
+          memory: 48Mi
+      restartCount: 1
+      started: true
+      state:
+        running:
+          startedAt: "2026-08-05T17:06:46Z"
+      user:
+        linux:
+          gid: 1000
+          supplementalGroups:
+          - 1000
+          - 10001
+          uid: 1000
+      volumeMounts:
+      - mountPath: /var/log/veloshare
+        name: logs
+        readOnly: true
+        recursiveReadOnly: Disabled
+      - mountPath: /fluent-bit/etc/
+        name: fluent-bit-config
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-65548
+        readOnly: true
+        recursiveReadOnly: Disabled
+    - allocatedResources:
+        cpu: 25m
+        memory: 96Mi
+      containerID: containerd://bee1323cdcb28f5a55424d665e277f9c485cd95b5c12e3d38e80703839feec31
+      image: docker.io/veloshare/trip:0.1.0
+      imageID: docker.io/library/import-2026-08-05@sha256:430ce5509ee9ee1690e1e0a1f884011f50c76ac1c909a349609f28b557ae96f0
+      lastState:
+        terminated:
+          containerID: containerd://94d120ed91ab0944db0bd77034d54979bb787fbe9562847f7ea4c0cbd4f8fccb
+          exitCode: 255
+          finishedAt: "2026-08-05T17:05:44Z"
+          reason: Unknown
+          startedAt: "2026-08-05T15:38:05Z"
+      name: trip
+      ready: true
+      resources:
+        limits:
+          cpu: 150m
+          memory: 192Mi
+        requests:
+          cpu: 25m
+          memory: 96Mi
+      restartCount: 5
+      started: true
+      state:
+        running:
+          startedAt: "2026-08-05T17:06:43Z"
+      user:
+        linux:
+          gid: 10001
+          supplementalGroups:
+          - 10001
+          uid: 10001
+      volumeMounts:
+      - mountPath: /var/log/veloshare
+        name: logs
+      - mountPath: /tmp
+        name: tmp
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-65548
+        readOnly: true
+        recursiveReadOnly: Disabled
+    hostIP: 172.18.0.3
+    hostIPs:
+    - ip: 172.18.0.3
+    initContainerStatuses:
+    - allocatedResources:
+        cpu: 10m
+        memory: 32Mi
+      containerID: containerd://e1d93da4692ff3e8a2f79dcfb59459607bae0806f610c3bc27bb47425d10320a
+      image: docker.io/library/alpine:3.20
+      imageID: docker.io/library/alpine@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+      lastState:
+        terminated:
+          containerID: containerd://4e16cb04d30a6d97427dfd0cf248796389b0675f0fa3808d2c0a1e8fa58998a5
+          exitCode: 0
+          finishedAt: "2026-08-05T15:33:29Z"
+          reason: Completed
+          startedAt: "2026-08-05T15:33:29Z"
+      name: config-check
+      ready: true
+      resources:
+        limits:
+          cpu: 50m
+          memory: 64Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      restartCount: 1
+      started: false
+      state:
+        terminated:
+          containerID: containerd://e1d93da4692ff3e8a2f79dcfb59459607bae0806f610c3bc27bb47425d10320a
+          exitCode: 0
+          finishedAt: "2026-08-05T17:05:51Z"
+          reason: Completed
+          startedAt: "2026-08-05T17:05:51Z"
+      user:
+        linux:
+          gid: 65534
+          supplementalGroups:
+          - 10001
+          - 65534
+          uid: 65534
+      volumeMounts:
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-65548
+        readOnly: true
+        recursiveReadOnly: Disabled
+    - allocatedResources:
+        cpu: 25m
+        memory: 64Mi
+      containerID: containerd://5ab28352c94f39e8ae349a06a67a49150b0b5fd74c5493ad2649c26e82393d03
+      image: docker.io/library/postgres:16
+      imageID: docker.io/library/postgres@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
+      lastState:
+        terminated:
+          containerID: containerd://c826f09ea4e3ee17e4bb3ca90609445bbf2906d4592a50e723e8a1c0b8630488
+          exitCode: 2
+          finishedAt: "2026-08-05T17:06:28Z"
+          reason: Error
+          startedAt: "2026-08-05T17:06:14Z"
+      name: migrate
+      ready: true
+      resources:
+        limits:
+          cpu: 200m
+          memory: 128Mi
+        requests:
+          cpu: 25m
+          memory: 64Mi
+      restartCount: 4
+      started: false
+      state:
+        terminated:
+          containerID: containerd://5ab28352c94f39e8ae349a06a67a49150b0b5fd74c5493ad2649c26e82393d03
+          exitCode: 0
+          finishedAt: "2026-08-05T17:06:42Z"
+          reason: Completed
+          startedAt: "2026-08-05T17:06:41Z"
+      user:
+        linux:
+          gid: 999
+          supplementalGroups:
+          - 101
+          - 999
+          - 10001
+          uid: 999
+      volumeMounts:
+      - mountPath: /migrations
+        name: migration
+      - mountPath: /tmp
+        name: tmp
+      - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        name: kube-api-access-65548
+        readOnly: true
+        recursiveReadOnly: Disabled
+    observedGeneration: 1
+    phase: Running
+    podIP: 10.244.2.3
+    podIPs:
+    - ip: 10.244.2.3
+    qosClass: Burstable
+    resources:
+      limits:
+        cpu: 250m
+        memory: 352Mi
+      requests:
+        cpu: 28m
+        memory: 176Mi
+    startTime: "2026-08-05T15:33:10Z"
+kind: List
+metadata:
+  resourceVersion: ""

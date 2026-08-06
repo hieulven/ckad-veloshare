@@ -1,599 +1,488 @@
 # VeloShare — Nền tảng chia sẻ xe đạp công cộng
 
-Hệ thống chia sẻ xe đạp cho thành phố, xây dựng theo kiến trúc **microservices** và triển khai
-hoàn toàn bằng **Kubernetes + Helm**. Người dùng mượn xe tại một trạm, đạp xe, trả xe và được
-tính cước theo thời gian sử dụng cùng hạng thành viên.
+Hệ thống chia sẻ xe đạp cho thành phố, xây dựng theo kiến trúc **microservices**, triển khai
+trên Kubernetes bằng **cả hai đường: Helm và kubectl/Kustomize**.
 
-> **Đây là dự án thực hành để học Kubernetes/Helm, không phải hệ thống production.**
-> Toàn bộ quy ước phát triển nằm trong [`CLAUDE.md`](./CLAUDE.md) — hãy đọc trước khi thêm code,
-> manifest hay chart.
+> **Đây là dự án thực hành (capstone) để học Kubernetes, không phải hệ thống production.**
+> Quy ước phát triển nằm trong [`CLAUDE.md`](./CLAUDE.md).
 
----
+Tám mục dưới đây bám đúng thứ tự yêu cầu tài liệu tại **§6.2** của
+[`capstone-requirements.md`](./capstone-requirements.md).
 
-## Mục lục
-
-- [Tính năng chính](#tính-năng-chính)
-- [Kiến trúc tổng quan](#kiến-trúc-tổng-quan)
-- [Các thành phần hệ thống](#các-thành-phần-hệ-thống)
-- [Tầng dữ liệu](#tầng-dữ-liệu)
-- [Xác thực và phân quyền](#xác-thực-và-phân-quyền)
-- [Quản lý secret](#quản-lý-secret)
-- [Log tập trung (EFK)](#log-tập-trung-efk)
-- [Báo cáo chỉ số cho quản lý](#báo-cáo-chỉ-số-cho-quản-lý)
-- [Hạ tầng cluster](#hạ-tầng-cluster)
-- [Cấu trúc thư mục](#cấu-trúc-thư-mục)
-- [Yêu cầu công cụ](#yêu-cầu-công-cụ)
-- [Bắt đầu nhanh](#bắt-đầu-nhanh)
-- [Truy cập hệ thống](#truy-cập-hệ-thống)
-- [Bảng giá cước](#bảng-giá-cước)
-- [Danh sách API](#danh-sách-api)
-- [Cấu hình](#cấu-hình)
-- [Các lệnh Makefile](#các-lệnh-makefile)
-- [Khắc phục sự cố](#khắc-phục-sự-cố)
-- [Lưu ý bảo mật](#lưu-ý-bảo-mật)
-- [Giới hạn đã biết](#giới-hạn-đã-biết)
-- [Tài liệu chi tiết](#tài-liệu-chi-tiết)
-
----
-
-## Tính năng chính
-
-- **Đăng nhập bằng JWT** với hai vai trò tách biệt: `rider` (người dùng) và `admin` (quản trị).
-- **Giao diện người dùng**: xem hồ sơ và hạng thành viên, duyệt danh sách trạm, bắt đầu/kết thúc
-  chuyến đi của chính mình, xem lịch sử chuyến và cước phí.
-- **Giao diện quản trị**: tạo/quản lý người dùng và trạm, cập nhật số chỗ trống, công cụ tính
-  cước, xem toàn bộ chuyến đi của mọi người dùng.
-- **Tính cước động** theo số phút, hạng thành viên và hệ số giờ cao điểm (surge).
-- **Log tập trung**: mỗi pod ứng dụng có một sidecar Fluent Bit đẩy log JSON về Elasticsearch,
-  tra cứu bằng Kibana. Một `request_id` duy nhất cho phép truy vết một giao dịch **xuyên nhiều
-  service**.
-- **Giám sát sức khoẻ**: CronJob định kỳ kiểm tra `/healthz` của các service.
-- **Cluster nhiều node**: workload chạy trên các worker node, control-plane được taint để không
-  nhận pod ứng dụng.
-
----
-
-## Kiến trúc tổng quan
-
-```mermaid
-flowchart TB
-    B["Trình duyệt"] --> ING["Ingress nginx<br/>(cổng 80 trên host)"]
-    ING -->|"/"| FE["frontend<br/>nginx + JS thuần"]
-    ING -->|"/kibana"| KB["Kibana"]
-
-    FE -->|"/api/pricing/*"| PR["pricing<br/>tính cước"]
-    FE -->|"/api/riders/*"| RD["rider<br/>người dùng + xác thực"]
-    FE -->|"/api/stations/*"| ST["station<br/>trạm và chỗ đỗ"]
-    FE -->|"/api/trips/*"| TR["trip<br/>vòng đời chuyến đi"]
-
-    TR -->|"tính cước"| PR
-    TR -->|"kiểm tra người dùng"| RD
-    TR --> RDS[("Redis")]
-
-    RD --> PG[("PostgreSQL")]
-    ST --> PG
-    TR --> PG
-
-    FM["fleet-monitor<br/>CronJob báo cáo<br/>hằng ngày"] -->|"truy vấn tổng hợp"| PG
-
-    PR & RD & ST & TR -.->|"sidecar Fluent Bit"| ES[("Elasticsearch")]
-    ES --> KB
-```
-
-Luồng một chuyến đi hoàn chỉnh:
-
-1. Người dùng đăng nhập → `rider` cấp **JWT**.
-2. Người dùng bấm *Start ride* → `trip` kiểm tra Redis xem có chuyến nào đang chạy chưa, gọi
-   `rider` xác nhận người dùng tồn tại, ghi bản ghi vào PostgreSQL, đặt key `trip:active:{rider_id}`.
-3. Người dùng bấm *End ride* → `trip` tính số phút, gọi `pricing` để lấy cước, cập nhật bản ghi,
-   xoá key Redis và bắn sự kiện vào stream `trip.completed`.
-
----
-
-## Các thành phần hệ thống
-
-| Thành phần | Công nghệ | Nhiệm vụ | Trạng thái |
-|---|---|---|---|
-| `rider` | Python / FastAPI | CRUD người dùng, tra cứu hạng, **cấp JWT** | PostgreSQL schema `riders` |
-| `station` | Python / FastAPI | Quản lý trạm và số chỗ đỗ | PostgreSQL schema `stations` |
-| `trip` | Python / FastAPI | Bắt đầu/kết thúc chuyến, điều phối tính cước, bắn sự kiện | PostgreSQL schema `trips`, Redis |
-| `pricing` | Python / FastAPI | Tính cước `{phút, hạng, surge} -> {cents}` | Không lưu trạng thái |
-| `fleet-monitor` | Bash (psql) | Sinh **báo cáo chỉ số người dùng** cho quản lý (số người dùng, chuyến đi, doanh thu theo hạng) | CronJob `0 0 * * *` (hằng ngày) |
-| `frontend` | nginx + JavaScript thuần | Giao diện web, reverse-proxy `/api/*` | Không lưu trạng thái |
-| `logging` | Elasticsearch + Kibana | Lưu trữ và tra cứu log tập trung | Elasticsearch StatefulSet |
-
-Mỗi service ứng dụng lắng nghe cổng **8000** trong container và được expose qua **ClusterIP
-Service cổng 80**. Ảnh container dùng chung tag `veloshare/<tên>:0.1.0`.
-
-Toàn bộ được đóng gói bằng **umbrella Helm chart** (`helm/veloshare`) với **9 subchart**:
-`pricing`, `postgres`, `rider`, `station`, `trip`, `redis`, `fleet-monitor`, `frontend`, `logging`.
-
----
-
-## Tầng dữ liệu
-
-**PostgreSQL** (StatefulSet + PVC 1Gi, Service headless): một database `veloshare` duy nhất,
-áp dụng nguyên tắc **mỗi service một schema và một DB user riêng**:
-
-| Service | Schema | DB user |
+| # | Mục | |
 |---|---|---|
-| `rider` | `riders` | `rider` |
-| `station` | `stations` | `station` |
-| `trip` | `trips` | `trip` |
-
-Mỗi service chỉ truy cập schema của chính nó (`search_path` được gán sẵn cho từng role), nhận
-thông tin kết nối qua Secret riêng (`<service>-db`), và chạy migration bằng **init container**
-trước khi container ứng dụng khởi động.
-
-**Redis** (Deployment): dùng cho dữ liệu tạm và fan-out sự kiện, không phải nơi lưu trữ bền vững.
-
-- `trip:active:{rider_id}` — key có TTL (mặc định 7200s), dùng để kiểm tra nhanh "người dùng này
-  có đang trong chuyến đi không". Đây là cơ chế chặn một người mượn hai xe cùng lúc.
-- `trip.completed` — stream nhận sự kiện mỗi khi một chuyến kết thúc.
-
-> Bản ghi chuyến đi **luôn được lưu bền vững trong PostgreSQL**, Redis chỉ đóng vai trò phụ trợ.
+| 1 | [Nghiệp vụ và user story](#1-nghiệp-vụ-và-user-story) | 5 | [Build và triển khai](#5-build-và-triển-khai) |
+| 2 | [Danh sách microservice](#2-danh-sách-microservice-và-trách-nhiệm) | 6 | [Kiểm chứng yêu cầu CKAD](#6-kiểm-chứng-từng-yêu-cầu-ckad-bắt-buộc) |
+| 3 | [Sơ đồ kiến trúc](#3-sơ-đồ-kiến-trúc) | 7 | [Kịch bản demo 5–10 phút](#7-kịch-bản-demo-510-phút) |
+| 4 | [Yêu cầu chuẩn bị](#4-yêu-cầu-chuẩn-bị) | 8 | [Giới hạn đã biết](#8-giới-hạn-đã-biết) |
 
 ---
 
-## Xác thực và phân quyền
+## 1. Nghiệp vụ và user story
 
-- Đăng nhập tại `POST /api/riders/auth/login` → trả về **JWT (HS256)**, hạn dùng **1 giờ**.
-- Trình duyệt lưu token trong `localStorage` và gửi kèm header `Authorization: Bearer <token>`.
-- Mật khẩu người dùng được băm bằng **`hashlib.scrypt`** (thư viện chuẩn), lưu dạng
-  `scrypt$<salt>$<hash>` trong cột `riders.password_hash`.
-- **Tài khoản admin lấy từ Kubernetes Secret** (`veloshare-auth`), không nằm trong bảng `riders` —
-  nghĩa là không ai có thể tự tạo tài khoản admin qua API.
-- `rider` là service **cấp** token; `trip` chỉ **xác minh** token bằng cùng `JWT_SECRET`.
+**Lĩnh vực:** chia sẻ xe đạp công cộng theo trạm (city bike-share) — một trong các chủ đề gợi ý
+tại §2.1 của đề bài.
 
-Nguyên tắc phân quyền đã được kiểm chứng:
+Người dùng mượn xe tại một trạm, đạp xe, trả xe tại trạm khác, và được tính cước theo **thời
+lượng chuyến đi** nhân **đơn giá theo hạng thành viên**, có nhân thêm **hệ số giờ cao điểm**.
 
-| Hành vi | Kết quả |
-|---|---|
-| `rider_id` khi tạo chuyến | Lấy **từ token**, giá trị gửi trong body bị bỏ qua |
-| Người dùng xem/kết thúc chuyến của người khác | **403 Forbidden** |
-| `GET /trips` với vai trò `rider` | Chỉ trả về chuyến của chính mình |
-| `GET /trips` với vai trò `admin` | Trả về toàn bộ chuyến |
-| Sai mật khẩu / thiếu token / token giả | **401 Unauthorized** |
-| Người dùng cũ chưa có mật khẩu | **401** — admin phải đặt mật khẩu thì mới đăng nhập được |
+**User story chính:**
 
----
+> *Là một người dùng đã đăng ký, tôi muốn mở khoá một chiếc xe tại trạm gần nhất, đạp tới nơi
+> cần đến, trả xe, và biết ngay mình bị tính bao nhiêu tiền — để tôi chủ động được chi phí đi lại
+> hằng ngày.*
 
-## Quản lý secret
+Các user story phụ:
 
-**Nguyên tắc: không một credential nào nằm trong git, và Helm cũng không hề nhìn thấy chúng.**
+- *Là quản trị viên, tôi muốn tạo/quản lý người dùng và trạm, cập nhật số chỗ đỗ trống, và xem
+  được toàn bộ chuyến đi của mọi người dùng.*
+- *Là quản lý, tôi muốn nhận báo cáo chỉ số hằng ngày (số người dùng, số chuyến, doanh thu theo
+  hạng) mà không phải tự truy vấn database.*
 
-Mỗi pod có một file cấu hình riêng trong thư mục `env/`, đóng vai trò như file `.env` của
-pod đó. File này **chỉ tồn tại trên máy local** — `.gitignore` chặn `env/*.env`, chỉ có file
-`env/*.env.template` được commit lên git.
+**Luồng một chuyến đi hoàn chỉnh:**
 
-```
-env/postgres.env   ->  Secret "postgres"        (StatefulSet postgres)
-env/rider.env      ->  Secret "rider-db"        (Deployment rider)
-env/station.env    ->  Secret "station-db"      (Deployment station)
-env/trip.env       ->  Secret "trip-db"         (Deployment trip)
-env/auth.env       ->  Secret "veloshare-auth"  (dùng chung cho rider + trip)
-```
+1. Người dùng đăng nhập → `rider` cấp **JWT** (HS256, hạn 1 giờ).
+2. Bấm *Start ride* → `trip` kiểm tra Redis xem người này có đang trong chuyến nào không, gọi
+   `rider` xác nhận người dùng tồn tại, ghi bản ghi vào PostgreSQL, đặt key
+   `trip:active:{rider_id}` (TTL 7200s).
+3. Bấm *End ride* → `trip` tính số phút, gọi `pricing` lấy cước, cập nhật bản ghi, xoá key Redis
+   và bắn sự kiện vào Redis stream `trip.completed`.
 
-### Luồng hoạt động
+**Cách tính cước:**
 
 ```
-env/<service>.env  --(make secrets)-->  kubectl create secret --from-env-file
-                                                 |
-                                        Secret trong cluster
-                                                 |
-                                        envFrom: secretRef  --> biến môi trường trong pod
-                                                 |
-                                        ứng dụng đọc bằng os.environ
+cước (cents) = phí mở khoá (100) + số_phút × đơn_giá_theo_hạng × hệ_số_surge
 ```
 
-Helm **chỉ tham chiếu tới Secret theo tên** (`envFrom: secretRef`), không tạo và không chứa
-giá trị. Nhờ vậy:
-
-- `helm template` / `helm get manifest` **không bao giờ lộ mật khẩu** — render ra **0 Secret**.
-- Không có credential nào bị commit, kể cả vô tình.
-- Muốn đổi mật khẩu: sửa `env/*.env` → `make secrets` → `kubectl rollout restart deploy/<service>`.
-
-### Sử dụng
-
-```sh
-make env-init     # Tạo env/*.env từ template (không ghi đè file đã có)
-# → sửa env/*.env, thay toàn bộ giá trị change-me
-make secrets      # Đẩy từng file thành Secret tương ứng trong cluster
-```
-
-`make secrets` sẽ **từ chối chạy** nếu phát hiện giá trị `change-me` còn sót lại, tránh việc
-vô tình triển khai bằng mật khẩu mẫu. `make up` đã bao gồm bước này.
-
-Sinh một JWT secret thật:
-
-```sh
-openssl rand -hex 32
-```
-
-### Những điểm cần lưu ý
-
-- `DB_PASSWORD` trong `env/rider.env` **phải khớp** với `RIDER_PASSWORD` trong
-  `env/postgres.env` (tương tự cho station/trip) — script khởi tạo của PostgreSQL dùng các giá
-  trị này để tạo LOGIN role, còn service dùng chúng để kết nối.
-- `env/postgres.env` chỉ có tác dụng ở **lần khởi tạo database đầu tiên** (initdb). Đổi mật
-  khẩu role sau đó phải sửa trực tiếp bằng `ALTER ROLE`, hoặc xoá PVC để tạo lại từ đầu.
-- `JWT_SECRET` phải giống nhau giữa `rider` (ký token) và `trip` (xác minh token) — cả hai cùng
-  đọc từ một Secret `veloshare-auth` nên không thể lệch.
-- Đây vẫn là mô hình **phù hợp môi trường học tập**: secret nằm trong file local và được lưu
-  trong etcd dưới dạng base64 (không phải mã hoá). Với môi trường thật nên dùng
-  Sealed Secrets / External Secrets / Vault và bật encryption-at-rest cho etcd.
-
----
-
-## Log tập trung (EFK)
-
-Mỗi pod ứng dụng chạy **3 container**: container ứng dụng + sidecar `ambassador` (nginx reverse
-proxy) + sidecar `log-agent` (Fluent Bit).
-
-> **Elasticsearch và Kibana mặc định TẮT** (`global.logging.enabled: false`) vì hai thành phần
-> này vượt `ResourceQuota` của namespace. Khi tắt, Fluent Bit đẩy log ra **stdout của chính
-> sidecar** — vẫn xem được đầy đủ log JSON của mọi pod:
-> ```sh
-> kubectl -n veloshare logs deploy/<service> -c log-agent
-> ```
-> Muốn dùng đầy đủ EFK (Kibana ở `/kibana`) thì bật logging **kèm** nâng quota — xem ví dụ
-> `--set` trong [`helm/veloshare/values.yaml`](./helm/veloshare/values.yaml).
-
-```
-ứng dụng --ghi--> /var/log/veloshare/app.log   (volume emptyDir dùng chung)
-                          |
-                   Fluent Bit (sidecar) --đẩy--> stdout                     (mặc định)
-                                          \--đẩy--> Elasticsearch --> Kibana (khi bật logging)
-```
-
-- Ứng dụng ghi log **JSON**: mỗi request một dòng (`method`, `path`, `status`, `duration_ms`,
-  `request_id`) cùng các **sự kiện nghiệp vụ**: `login`, `rider_created`, `station_created`,
-  `docks_updated`, `trip_started`, `trip_completed`, `fare_computed`.
-- `trip` chuyển tiếp header `X-Request-ID` sang `rider` và `pricing`, nên **tra cứu một
-  `request_id` sẽ trả về toàn bộ giao dịch xuyên nhiều service** (ví dụ `fare_computed` của
-  `pricing` nằm cùng `trip_completed` của `trip`).
-- Mọi response đều trả header `x-request-id` — lấy id từ một request lỗi trên trình duyệt rồi tìm
-  thẳng trong Kibana.
-
-Lần đầu dùng Kibana cần tạo **data view** tên `veloshare-*` với trường thời gian `@timestamp`
-(Stack Management → Data Views), sau đó tra cứu trong Discover.
-
----
-
-## Báo cáo chỉ số cho quản lý
-
-Service `fleet-monitor` là một **CronJob chạy hằng ngày** (`0 0 * * *`) sinh báo cáo chỉ số
-người dùng/nghiệp vụ và in ra **log của Job**. Nó truy vấn tổng hợp trực tiếp trên PostgreSQL
-(bằng quyền `postgres` admin — đây là job báo cáo nên đọc chéo schema là hợp lệ).
-
-Báo cáo gồm: tổng người dùng và phân bố theo hạng; số trạm + sức chứa + chỗ trống; tổng chuyến
-đi (hoàn tất / đang chạy / hôm nay); doanh thu lũy kế và hôm nay, cước trung bình, thời lượng
-trung bình; và doanh thu theo từng hạng thành viên.
-
-**Kích hoạt bất kỳ lúc nào** (không cần đợi tới nửa đêm):
-
-```sh
-kubectl -n veloshare create job --from=cronjob/fleet-monitor report-now
-kubectl -n veloshare wait --for=condition=complete job/report-now --timeout=60s
-kubectl -n veloshare logs job/report-now
-```
-
-CronJob giữ lại **7 báo cáo gần nhất** (`successfulJobsHistoryLimit: 7`) để quản lý đọc lại.
-
-> Hiện báo cáo được gửi ra **stdout / log của Job**. Muốn gửi email/Slack thì cần thêm một
-> Secret SMTP/webhook — chưa nằm trong phạm vi môi trường học tập cục bộ này.
-
----
-
-## Hạ tầng cluster
-
-Cluster `kind` tên **`veloshare`** gồm **3 node** (định nghĩa trong [`kind-config.yaml`](./kind-config.yaml)):
-
-| Node | Vai trò | Ghi chú |
-|---|---|---|
-| `veloshare-control-plane` | control-plane | Được **taint `NoSchedule`** → không chạy pod ứng dụng. Chứa ingress controller, map cổng 80/443 của host |
-| `veloshare-worker` | worker | Chạy workload |
-| `veloshare-worker2` | worker | Chạy workload |
-
-> `kind` mặc định **gỡ bỏ** taint của control-plane; dự án chủ động thêm lại qua
-> `kubeadmConfigPatches` để ép toàn bộ pod ứng dụng chạy trên worker node.
-
-Ingress (`ingress-nginx`) định tuyến:
-
-| Đường dẫn | Đích |
-|---|---|
-| `/` | `frontend:80` |
-| `/kibana` | `kibana:5601` |
-
-Ingress **không gán host cụ thể** (`global.ingress.host: ""`) nên khớp với mọi `Host` header —
-truy cập thẳng `http://localhost/` mà không cần sửa file `hosts`.
-
----
-
-## Cấu trúc thư mục
-
-```
-rider/ station/ trip/ pricing/   Service FastAPI (main.py, requirements.txt, Dockerfile)
-fleet-monitor/                    report.sh + Dockerfile (CronJob báo cáo hằng ngày)
-frontend/                         index.html, app.js, styles.css, nginx.conf, Dockerfile
-helm/veloshare/                   Umbrella Helm chart
-  Chart.yaml                      Khai báo 9 subchart phụ thuộc
-  values.yaml                     Giá trị global + override cho từng service
-  templates/                      Tài nguyên dùng chung: _helpers.tpl, ingress, auth-secret
-  charts/                         Mỗi service một subchart + postgres, redis, logging, frontend
-env/                              Cấu hình + credential của từng pod
-  *.env.template                  Mẫu (được commit lên git)
-  *.env                           Giá trị thật (gitignore — CHỈ nằm trên máy local)
-docs/                             USER_GUIDE.md (người dùng), ADMIN_GUIDE.md (quản trị)
-kind-config.yaml                  Định nghĩa cluster 3 node
-Makefile                          Các lệnh vận hành
-CLAUDE.md                         Quy ước dự án
-```
-
----
-
-## Yêu cầu công cụ
-
-| Công cụ | Vai trò |
-|---|---|
-| **Docker** | Build image, chạy các node của kind |
-| **kind** | Tạo cluster Kubernetes cục bộ |
-| **kubectl** | Kiểm tra, debug cluster |
-| **Helm** | Đóng gói và triển khai (không dùng `kubectl apply` trực tiếp) |
-
-> Trên máy này các công cụ được cài vào `~/.local/bin` (không cần `sudo`).
-
----
-
-## Bắt đầu nhanh
-
-**Bước 1 — tạo file secret local** (bắt buộc, chỉ làm một lần):
-
-```sh
-make env-init     # Tạo env/*.env từ các file template
-```
-
-Mở từng file trong `env/` và thay **toàn bộ** giá trị `change-me`. Xem
-[Quản lý secret](#quản-lý-secret) để hiểu file nào tương ứng pod nào.
-
-**Bước 2 — dựng toàn bộ hệ thống** bằng một lệnh (tạo cluster, cài ingress, tạo secret, build
-image, nạp image, triển khai):
-
-```sh
-make up
-```
-
-Hoặc chạy từng bước:
-
-```sh
-make cluster-up   # Tạo cluster kind 3 node từ kind-config.yaml
-make ingress      # Cài ingress-nginx và chờ sẵn sàng
-make secrets      # Đẩy env/*.env thành các Secret trong cluster
-make images       # Build toàn bộ image veloshare/*:0.1.0
-make load         # Nạp image vào cluster kind (không cần registry)
-make deploy       # helm upgrade --install vào namespace veloshare
-```
-
-Kiểm tra kết quả:
-
-```sh
-kubectl -n veloshare get pods -o wide     # các pod đều nằm trên worker node
-kubectl get nodes                          # 3 node
-```
-
-> **Lưu ý quan trọng:** image dùng tag cố định `0.1.0` và `imagePullPolicy: IfNotPresent`.
-> Sau khi sửa code phải **build lại → nạp lại → khởi động lại pod**:
-> ```sh
-> make images && make load
-> kubectl -n veloshare rollout restart deploy/<tên-service>
-> ```
-
----
-
-## Truy cập hệ thống
-
-| Địa chỉ | Nội dung |
-|---|---|
-| <http://localhost/> | Giao diện VeloShare (đăng nhập) |
-| <http://localhost/kibana> | Kibana — tra cứu log |
-
-Nếu muốn dùng tên miền `veloshare.local`, thêm dòng sau vào file hosts của máy
-(`C:\Windows\System32\drivers\etc\hosts` trên Windows, `/etc/hosts` trên Linux):
-
-```
-127.0.0.1 veloshare.local
-```
-
-### Tài khoản quản trị
-
-Tài khoản admin **do bạn tự đặt** trong `env/auth.env` (`ADMIN_EMAIL` / `ADMIN_PASSWORD`) trước
-khi chạy `make secrets` — repo không chứa sẵn mật khẩu nào.
-
-Tài khoản người dùng do admin tạo trong giao diện quản trị (bắt buộc đặt mật khẩu thì người dùng
-mới đăng nhập được).
-
----
-
-## Bảng giá cước
-
-Công thức:
-
-```
-cước (cents) = phí mở khoá + số_phút × đơn_giá_theo_hạng × hệ_số_surge
-```
-
-| Hạng | Đơn giá mỗi phút | Ghi chú |
+| Hạng | Đơn giá/phút | |
 |---|---|---|
 | `standard` | 15 cents | Khách vãng lai |
 | `member` | 8 cents | Thành viên |
 | `day_pass` | 5 cents | Vé ngày |
 
-Phí mở khoá: **100 cents**. Ví dụ: 10 phút, hạng `member`, surge 1.5
-→ `100 + 10 × 8 × 1.5 = 220 cents = $2.20`.
-
-Số phút được **làm tròn lên** (một chuyến 30 giây vẫn tính 1 phút).
-Giá trị cấu hình qua `PRICING_UNLOCK_FEE_CENTS` và `PRICING_TIER_RATES`.
+Số phút **làm tròn lên** (chuyến 30 giây vẫn tính 1 phút). Ví dụ: 10 phút, hạng `member`,
+surge 1.5 → `100 + 10 × 8 × 1.5 = 220 cents = $2.20`.
 
 ---
 
-## Danh sách API
+## 2. Danh sách microservice và trách nhiệm
 
-Trình duyệt gọi qua reverse-proxy của frontend (cùng origin nên **không cần CORS**):
-`/api/pricing/*` → `pricing`, `/api/riders/*` → `rider`, `/api/stations/*` → `station`,
-`/api/trips/*` → `trip`.
+**5 service lõi** (đúng mức "target 4–5" của §2.2) + 1 frontend + 1 stack logging tuỳ chọn.
+Mỗi service có **image riêng**, Dockerfile riêng, và được triển khai độc lập.
 
-| Method | Đường dẫn | Quyền | Mô tả |
+| Service | Công nghệ | Trách nhiệm (bounded context) | Trạng thái | Workload |
+|---|---|---|---|---|
+| `rider` | Python / FastAPI | CRUD người dùng, tra cứu hạng, **cấp JWT** (`/auth/login`) | PostgreSQL schema `riders` | Deployment |
+| `station` | Python / FastAPI | Quản lý trạm và số chỗ đỗ | PostgreSQL schema `stations` | Deployment |
+| `trip` | Python / FastAPI | Vòng đời chuyến đi, điều phối `rider` + `pricing`, bắn sự kiện | PostgreSQL schema `trips`, Redis | Deployment |
+| `pricing` | Python / FastAPI | Tính cước `{phút, hạng, surge} → {cents}` | Không lưu trạng thái | Deployment + **HPA** |
+| `fleet-monitor` | Bash + psql | Báo cáo chỉ số người dùng/doanh thu cho quản lý | Không lưu trạng thái | **CronJob** `0 0 * * *` |
+| `frontend` | nginx + JS thuần | Giao diện web, reverse-proxy `/api/*` (cùng origin, không cần CORS) | Không lưu trạng thái | Deployment |
+| `pod-lister` | Bash + kubectl API | Lab RBAC: dùng ServiceAccount riêng gọi API liệt kê Pod | Không lưu trạng thái | **CronJob** `*/5 * * * *` |
+| `logging` | Elasticsearch + Kibana | Lưu trữ + tra cứu log tập trung (**mặc định TẮT**) | Elasticsearch StatefulSet | StatefulSet + Deployment |
+
+Hạ tầng dùng chung: **PostgreSQL** (StatefulSet + PVC 1Gi) và **Redis** (Deployment).
+
+**Ranh giới dữ liệu — mỗi service một schema và một DB role riêng:**
+
+| Service | Schema | DB role | Ghi chú |
 |---|---|---|---|
-| `GET` | `/healthz` | công khai | Health check (mọi service) |
-| `POST` | `/auth/login` | công khai | Đăng nhập, trả JWT |
-| `GET` | `/auth/me` | đã đăng nhập | Thông tin danh tính hiện tại |
-| `POST` | `/riders` | admin | Tạo người dùng (kèm mật khẩu) |
-| `GET` | `/riders` | — | Danh sách người dùng |
-| `GET` | `/riders/{id}` | — | Chi tiết người dùng |
-| `GET` | `/riders/{id}/tier` | — | Hạng của người dùng |
-| `DELETE` | `/riders/{id}` | — | Xoá người dùng |
-| `GET` | `/tiers` | công khai | Phí mở khoá + đơn giá từng hạng |
-| `POST` | `/fare` | công khai | Tính cước `{minutes, tier, surge}` → `{cents}` |
-| `POST` | `/stations` | — | Tạo trạm |
-| `GET` | `/stations` | — | Danh sách trạm |
-| `GET` | `/stations/{id}` | — | Chi tiết trạm |
-| `PATCH` | `/stations/{id}/docks` | — | Cập nhật số chỗ trống |
-| `DELETE` | `/stations/{id}` | — | Xoá trạm |
-| `POST` | `/trips/start` | đã đăng nhập | Bắt đầu chuyến (`rider_id` lấy từ token) |
-| `POST` | `/trips/{id}/end` | chủ chuyến / admin | Kết thúc chuyến, tính cước |
-| `GET` | `/trips` | đã đăng nhập | Danh sách chuyến (rider: của mình; admin: tất cả) |
-| `GET` | `/trips/{id}` | chủ chuyến / admin | Chi tiết chuyến |
+| `rider` | `riders` | `rider` | `search_path` gán cứng vào schema của mình |
+| `station` | `stations` | `station` | không truy vấn chéo schema |
+| `trip` | `trips` | `trip` | |
+| `fleet-monitor` | *(tất cả)* | `postgres` | **Ngoại lệ có chủ đích**: job báo cáo cần tổng hợp xuyên schema |
+
+**Giao tiếp giữa các service:**
+
+| Kiểu | Cơ chế | Ví dụ |
+|---|---|---|
+| **Đồng bộ** | HTTP qua DNS nội bộ `http://<svc>.veloshare.svc.cluster.local` | `trip` → `pricing` để tính cước; `trip` → `rider` để xác thực người dùng |
+| **Bất đồng bộ** | Redis stream `trip.completed` | `trip` bắn sự kiện khi kết thúc chuyến, không chờ ai xử lý |
+
+Mọi request đều mang một `request_id` (từ header `X-Request-ID` hoặc tự sinh); `trip` chuyển
+tiếp sang `rider` và `pricing` nên **tra một `request_id` là thấy toàn bộ giao dịch xuyên service**.
+
+Container ứng dụng nghe cổng **8000**; sidecar `ambassador` (nginx) nghe **8080** và proxy về
+`127.0.0.1:8000` — chính 8080 là `targetPort` của ClusterIP Service. Service expose cổng **80**.
+Ảnh container dùng tag cố định `veloshare/<tên>:0.1.0` (không bao giờ `:latest`).
 
 ---
 
-## Cấu hình
+## 3. Sơ đồ kiến trúc
 
-Toàn bộ giá trị global nằm trong [`helm/veloshare/values.yaml`](./helm/veloshare/values.yaml):
+```mermaid
+flowchart TB
+    B["Trình duyệt"] --> ING["Ingress nginx<br/>(cổng 80 trên host)"]
+    ING -->|"/"| FE["frontend<br/>nginx + JS thuần"]
+    ING -->|"/api/healthz"| RD
+    ING -->|"/kibana"| KB["Kibana<br/>(khi bật logging)"]
 
-```yaml
-global:
-  namespace: veloshare
-  image:
-    registry: veloshare
-    tag: "0.1.0"
-    pullPolicy: IfNotPresent
-  ingress:
-    enabled: true
-    host: ""            # rỗng = khớp mọi Host header
-    className: nginx
-  logging:
-    enabled: true       # bật/tắt sidecar Fluent Bit
+    FE -->|"/api/pricing/*"| PR["pricing<br/>tính cước"]
+    FE -->|"/api/riders/*"| RD["rider<br/>người dùng + cấp JWT"]
+    FE -->|"/api/stations/*"| ST["station<br/>trạm và chỗ đỗ"]
+    FE -->|"/api/trips/*"| TR["trip<br/>vòng đời chuyến đi"]
+
+    TR -->|"HTTP: tính cước"| PR
+    TR -->|"HTTP: xác thực người dùng"| RD
+    TR -->|"stream trip.completed"| RDS[("Redis")]
+
+    RD --> PG[("PostgreSQL<br/>schema riders")]
+    ST --> PG2[("PostgreSQL<br/>schema stations")]
+    TR --> PG3[("PostgreSQL<br/>schema trips")]
+
+    FM["fleet-monitor<br/>CronJob hằng ngày"] -->|"truy vấn tổng hợp"| PG
+
+    PR & RD & ST & TR -.->|"sidecar Fluent Bit"| ES[("Elasticsearch")]
+    ES --> KB
 ```
 
-> Trong `values.yaml` **cố ý không có bất kỳ credential nào** — toàn bộ mật khẩu, JWT secret và
-> tài khoản admin nằm trong `env/*.env` (xem [Quản lý secret](#quản-lý-secret)).
+**Mỗi pod ứng dụng chạy 3 container** (`READY 3/3`):
 
-Giá trị riêng của từng service nằm trong `helm/veloshare/charts/<tên>/values.yaml`
-(image, port, số replica, resources, đường dẫn probe…).
+```
+┌─ Pod (rider / station / trip / pricing) ──────────────────┐
+│  initContainers:  config-check → migrate                  │
+│                                                            │
+│  ┌──────────┐   ┌────────────┐   ┌───────────┐            │
+│  │ <app>    │   │ ambassador │   │ log-agent │            │
+│  │ :8000    │←──│ nginx :8080│   │ Fluent Bit│            │
+│  └────┬─────┘   └────────────┘   └─────▲─────┘            │
+│       │ ghi JSON                        │ tail             │
+│       └──────► emptyDir /var/log/veloshare/app.log ────────┘
+└────────────────────────────────────────────────────────────┘
+                          ▲ Service targetPort trỏ vào 8080
+```
 
-**Nguyên tắc:** template **không hardcode** tên hay port — mọi thứ đọc từ `.Values`. Tên tài
-nguyên và nhãn đi qua helper dùng chung trong `templates/_helpers.tpl`.
+**Cluster:** `kind` 3 node ([`kind-config.yaml`](./kind-config.yaml)) — 1 control-plane
+(taint `NoSchedule`, chạy ingress-nginx, map cổng 80/443 của host) + 2 worker chạy toàn bộ pod
+ứng dụng.
 
----
-
-## Các lệnh Makefile
-
-| Lệnh | Tác dụng |
-|---|---|
-| `make help` | Liệt kê các target |
-| `make up` | **Toàn bộ quy trình**: cluster → ingress → secrets → images → load → deploy |
-| `make env-init` | Tạo `env/*.env` từ template (không ghi đè file đã có) |
-| `make secrets` | Đẩy `env/*.env` thành các Secret trong cluster |
-| `make cluster-up` | Tạo cluster kind 3 node |
-| `make cluster-down` | Xoá cluster |
-| `make ingress` | Cài ingress-nginx |
-| `make images` | Build toàn bộ image |
-| `make load` | Nạp image vào kind |
-| `make lint` | `helm lint` chart |
-| `make template` | Render chart ra YAML (không cần cluster) |
-| `make deploy` | `helm upgrade --install` |
-| `make uninstall` | Gỡ release |
+Sơ đồ chi tiết hơn (luồng dữ liệu, đồng bộ/bất đồng bộ) nằm trong
+[`docs/architecture.md`](./docs/architecture.md).
 
 ---
 
-## Khắc phục sự cố
+## 4. Yêu cầu chuẩn bị
 
-| Hiện tượng | Giải thích |
-|---|---|
-| Pod `fleet-monitor` hiển thị `0/1 Completed` | **Bình thường.** Đây là CronJob — pod chạy xong thì container thoát (`exitCode=0`), nên không còn container nào "đang chạy". Bản báo cáo nằm trong log của Job: `kubectl -n veloshare logs job/<tên>` |
-| HPA của `pricing` hiển thị `cpu <unknown>` | Chưa cài `metrics-server`. Chạy `make metrics-server` để HPA đọc được CPU và scale thật |
-| `kubectl top` báo lỗi `Metrics API not available` | Cùng nguyên nhân trên — `top` bắt buộc phải có `metrics-server`. Chạy `make metrics-server` |
-| Không có pod `elasticsearch` / `kibana` | **Bình thường.** `global.logging.enabled` mặc định là `false` vì ES + Kibana vượt `ResourceQuota` của namespace. Sidecar `log-agent` vẫn chạy và ghi log ra stdout của chính nó |
-| Bật `global.logging.enabled=true` nhưng pod ES/Kibana bị từ chối | Đúng như thiết kế: quota chặn. Phải nâng `global.resourceQuota` cùng lúc — xem ví dụ `--set` trong `helm/veloshare/values.yaml` |
-| Elasticsearch lâu vào trạng thái Ready (khi bật logging) | Image lớn (~670MB) và ES khởi động chậm; đã có `startupProbe` cho tối đa 5 phút. Bắt buộc phải có init container privileged đặt `vm.max_map_count=262144` |
-| Pod ứng dụng hiển thị `3/3` | Đúng: container ứng dụng + sidecar `ambassador` (nginx) + sidecar `log-agent`. Phải chỉ rõ container khi xem log: `kubectl -n veloshare logs <pod> -c log-agent` |
-| Sửa code nhưng không thấy thay đổi | Tag image không đổi → phải `make images && make load` rồi `kubectl -n veloshare rollout restart deploy/<service>` |
+### 4.1 Công cụ
 
-Lệnh chẩn đoán hữu ích:
+| Công cụ | Vai trò | Kiểm tra |
+|---|---|---|
+| **Docker** | Build image, chạy node của kind | `docker version` |
+| **kind** | Tạo cluster Kubernetes cục bộ | `kind version` |
+| **kubectl** | Triển khai, kiểm tra, debug | `kubectl version --client` |
+| **Helm v3** | Đường triển khai bằng chart | `helm version` |
+| **Kustomize** | Đã tích hợp sẵn trong `kubectl apply -k` | `kubectl kustomize --help` |
+
+### 4.2 Thành phần cần có trong cluster
+
+| Thành phần | Cách cài | Bắt buộc cho |
+|---|---|---|
+| ingress-nginx | `make ingress` | N2, N3 — truy cập từ ngoài |
+| metrics-server | `make metrics-server` | P4 — HPA và `kubectl top` |
+| CNI hỗ trợ NetworkPolicy | có sẵn (kindnet) | N4 |
+| Default StorageClass | có sẵn (`standard`) | D5 — PVC động |
+
+> `make up` **không** bao gồm `metrics-server`. Chưa cài thì HPA hiển thị `cpu <unknown>`
+> và `kubectl top` báo `Metrics API not available`.
+
+### 4.3 Secret phải tự tạo (bắt buộc trước khi triển khai)
+
+**Nguyên tắc: không một credential nào nằm trong git, và Helm cũng không hề nhìn thấy chúng.**
+Template chỉ tham chiếu Secret **theo tên** (`envFrom: secretRef`) nên `helm template` render
+ra **0 Secret**.
+
+| File local (gitignored) | Secret trong cluster | Pod sử dụng |
+|---|---|---|
+| `env/postgres.env` | `postgres` | postgres StatefulSet, fleet-monitor |
+| `env/rider.env` | `rider-db` | rider |
+| `env/station.env` | `station-db` | station |
+| `env/trip.env` | `trip-db` | trip |
+| `env/auth.env` | `veloshare-auth` | rider (ký JWT) + trip (xác minh) |
 
 ```sh
-# Trạng thái tổng quan
-kubectl -n veloshare get pods -o wide
-kubectl -n veloshare get svc,endpoints          # Service nào chưa có endpoint là đang lỗi selector
+make env-init                 # tạo env/*.env từ *.env.template (không ghi đè)
+# → mở từng file, thay TOÀN BỘ giá trị change-me
+openssl rand -hex 32          # sinh JWT_SECRET thật
+make secrets                  # đẩy từng file thành Secret trong cluster
+```
 
-# Vì sao pod không lên: xem Events ở cuối phần describe
-kubectl -n veloshare describe pod <pod>
-kubectl -n veloshare get events --sort-by=.lastTimestamp | tail -20
+`make secrets` **từ chối chạy** nếu còn sót `change-me`.
 
-# Tiêu thụ tài nguyên (cần metrics-server — xem `make metrics-server`)
-kubectl -n veloshare top pods
-kubectl top nodes
+**Ba điểm dễ sai:**
 
-# Log: pod ứng dụng có 3 container nên luôn phải có -c
-kubectl -n veloshare logs deploy/trip -c trip
-kubectl -n veloshare logs deploy/trip -c log-agent
-kubectl -n veloshare logs deploy/trip -c trip --previous   # log của lần crash trước
+- `DB_PASSWORD` trong `env/rider.env` **phải khớp** `RIDER_PASSWORD` trong `env/postgres.env`
+  (tương tự station/trip) — script initdb của PostgreSQL dùng giá trị này để tạo LOGIN role.
+- `env/postgres.env` **chỉ có tác dụng ở lần initdb đầu tiên**. Đổi mật khẩu sau đó phải
+  `ALTER ROLE` hoặc xoá PVC.
+- Tài khoản admin (`ADMIN_EMAIL`/`ADMIN_PASSWORD`) lấy từ `veloshare-auth`, **không** nằm trong
+  bảng `riders` — không ai tạo được tài khoản admin qua API.
 
-# Dữ liệu
-kubectl -n veloshare exec postgres-0 -- psql -U postgres -d veloshare -c 'SELECT * FROM trips.trips;'
+---
+
+## 5. Build và triển khai
+
+### 5.1 Dựng toàn bộ trong một lệnh
+
+```sh
+make env-init                 # lần đầu: tạo env/*.env rồi sửa hết change-me
+make up                       # cluster → ingress → secrets → build → load → deploy (Helm)
+make metrics-server           # cần cho HPA (P4) và kubectl top
+```
+
+Hoặc từng bước:
+
+```sh
+make cluster-up               # tạo cluster kind 3 node
+make ingress                  # cài ingress-nginx và chờ sẵn sàng
+make secrets                  # đẩy env/*.env thành Secret
+./scripts/build.sh            # build + kind load toàn bộ image (= make images && make load)
+make deploy                   # helm upgrade --install
+```
+
+### 5.2 Hai đường triển khai — chọn MỘT
+
+Cả hai mô tả cùng một hệ thống: thư mục `k8s/` được **sinh tự động từ chart** bằng
+`scripts/gen-k8s.sh`, nên hai đường không thể lệch nhau.
+
+```sh
+# Đường A — Helm (mặc định)
+./scripts/deploy.sh helm
+
+# Đường B — kubectl / Kustomize
+./scripts/deploy.sh kubectl dev      # overlay dev  (1 replica mỗi service)
+./scripts/deploy.sh kubectl prod     # overlay prod (2 replica + quota cao hơn)
+```
+
+> **Không bao giờ chạy cả hai cùng lúc.** Helm và kubectl đều tin rằng mình sở hữu các object
+> nó tạo ra: cài chart đè lên bản apply thô sẽ khiến Helm "nhận vơ" tài nguyên nó không tạo,
+> còn apply `k8s/` đè lên một release sẽ bị `helm upgrade` kế tiếp ghi đè ngược lại — cả hai
+> đều hỏng âm thầm. `scripts/deploy.sh` **tự chặn** đường này khi đường kia đang giữ namespace
+> (bỏ qua bằng `FORCE=1` nếu bạn thực sự muốn).
+
+Gỡ đường đang dùng trước khi đổi sang đường kia:
+
+```sh
+helm uninstall veloshare -n veloshare     # nếu đang dùng Helm
+kubectl delete -k k8s/overlays/dev        # nếu đang dùng kubectl
+```
+
+### 5.3 Sau khi sửa code một service
+
+Tag image **không đổi** (`0.1.0`) nên Kubernetes không tự nhận ra bản build mới:
+
+```sh
+./scripts/build.sh rider                       # build lại + nạp vào kind, chỉ service này
+kubectl -n veloshare rollout restart deploy/rider
+kubectl -n veloshare rollout status deploy/rider
+```
+
+### 5.3b Tag thứ hai của `pricing` (phục vụ demo pin image theo môi trường)
+
+Overlay `dev` pin `pricing:0.1.0`, overlay `prod` pin `pricing:0.2.0`. Cả hai tag đều được
+build thật từ `services/pricing` và nạp vào cluster:
+
+```sh
+make images-demo-tag           # = TAG=0.2.0 ./scripts/build.sh pricing
+docker images | grep veloshare/pricing        # thấy cả 0.1.0 và 0.2.0
+```
+
+Giá trị version được **nướng vào image lúc build** (`ARG APP_VERSION` trong
+[`services/pricing/Dockerfile`](./services/pricing/Dockerfile), `scripts/build.sh` truyền
+`--build-arg APP_VERSION=$TAG`), nên pod **không thể báo sai** image nó đang chạy:
+
+```sh
+kubectl -n veloshare exec deploy/pricing -c ambassador -- curl -s 127.0.0.1:8080/version
+# {"service":"pricing","version":"0.1.0"}
+```
+
+> `/healthz` **cố ý giữ nguyên** `{"status":"ok"}` — probe và `scripts/smoke-test.sh` so khớp
+> chính xác chuỗi này, nên version được đưa ra endpoint `/version` riêng.
+
+### 5.4 Sau khi sửa Helm chart
+
+```sh
+make lint && make template          # kiểm tra trước khi chạm cluster
+make deploy                         # helm upgrade --install
+make gen-k8s                        # sinh lại k8s/ để hai đường không lệch nhau
+```
+
+### 5.5 Truy cập
+
+| Địa chỉ | Nội dung |
+|---|---|
+| <http://localhost/> | Giao diện VeloShare (đăng nhập) |
+| <http://localhost/api/healthz> | Health check của `rider` qua Ingress |
+| <http://localhost/kibana> | Kibana (chỉ khi bật `global.logging.enabled`) |
+
+```sh
+make seed              # tạo sẵn trạm/người dùng/chuyến đi mẫu
+make smoke-test        # 22 kiểm tra E2E, exit != 0 nếu có lỗi
+```
+
+---
+
+## 6. Kiểm chứng từng yêu cầu CKAD bắt buộc
+
+Bảng đầy đủ (yêu cầu → file cài đặt → lệnh kiểm chứng) nằm trong
+[`docs/ckad-checklist.md`](./docs/ckad-checklist.md). Dưới đây là lệnh ngắn nhất cho từng mục
+**Required** của §4.
+
+### 4.1 Application Design and Build
+
+| ID | Kiểm chứng |
+|---|---|
+| D1 | `ls services/*/Dockerfile` → 7 Dockerfile; `docker images \| grep veloshare` → tag `0.1.0`, không có `:latest` |
+| D2 | `kubectl -n veloshare get deploy,sts,cronjob` → 6 Deployment, 1 StatefulSet, 2 CronJob |
+| D3 | `kubectl -n veloshare get pod -l app.kubernetes.io/name=rider -o jsonpath='{.items[0].spec.initContainers[*].name} {.items[0].spec.containers[*].name}'` → `config-check migrate rider ambassador log-agent` |
+| D4 | `kubectl -n veloshare exec deploy/rider -c rider -- ls /var/log/veloshare` rồi `kubectl -n veloshare logs deploy/rider -c log-agent` → cùng dòng log qua `emptyDir` dùng chung |
+| D5 | `kubectl -n veloshare get pvc` → `data-postgres-0` + `fleet-monitor-reports` đều `Bound` |
+| D6 | `kubectl -n veloshare get pods --show-labels` ; lab blue/green: `k8s/labs/bluegreen-demo.yaml` |
+
+### 4.2 Application Deployment
+
+| ID | Kiểm chứng |
+|---|---|
+| P1 | `kubectl -n veloshare get deploy` → 6 Deployment, đều `READY 1/1` trở lên |
+| P2 | `kubectl -n veloshare rollout restart deploy/pricing && kubectl -n veloshare rollout status deploy/pricing` |
+| P3 | `kubectl apply -f k8s/labs/bluegreen-demo.yaml` rồi `kubectl -n veloshare patch svc bluegreen-demo -p '{"spec":{"selector":{"color":"green"}}}'` |
+| P4 | `kubectl -n veloshare get hpa` → `cpu: N%/70%` (không phải `<unknown>`) |
+| P5 | `diff <(kubectl kustomize k8s/overlays/dev) <(kubectl kustomize k8s/overlays/prod)` → khác **image tag** (`pricing:0.1.0` vs `0.2.0`), **replicas** (1 vs 2) và **ResourceQuota**. Chứng minh pod đang chạy image nào: `kubectl -n veloshare exec deploy/pricing -c ambassador -- curl -s 127.0.0.1:8080/version` |
+| P6 | `helm -n veloshare history veloshare` rồi `make rollback REV=1` |
+
+### 4.3 Application Environment, Configuration & Security
+
+| ID | Kiểm chứng |
+|---|---|
+| C1 | `kubectl -n veloshare get cm` → 11 ConfigMap; inject qua `envFrom.configMapRef` |
+| C2 | `kubectl -n veloshare get secret` → 5 Secret; `helm template ... \| grep -c '^kind: Secret'` → **0** |
+| C3 | `kubectl -n veloshare get deploy rider -o jsonpath='{.spec.template.spec.containers[0].securityContext}'` → `runAsNonRoot`, `allowPrivilegeEscalation:false`, `drop:[ALL]`, `readOnlyRootFilesystem:true` |
+| C4 | `kubectl -n veloshare get sa,role,rolebinding` → `pod-lister`; `kubectl -n veloshare create job pods-now --from=cronjob/pod-lister` rồi xem log |
+| C5 | `kubectl -n veloshare get resourcequota,limitrange` → `veloshare-quota` + `veloshare-limits` |
+| C6 | `kubectl -n veloshare get pods -o jsonpath='{range .items[*]}{range .spec.containers[*]}{.name}{" "}{.resources}{"\n"}{end}{end}'` → mọi container đều có requests + limits |
+
+### 4.4 Services and Networking
+
+| ID | Kiểm chứng |
+|---|---|
+| N1 | `kubectl -n veloshare get svc` → ClusterIP cho toàn bộ traffic nội bộ |
+| N2 | `curl -s -o /dev/null -w '%{http_code}' http://localhost/` → `200` (Ingress); `frontend` còn có NodePort |
+| N3 | `kubectl -n veloshare get ingress` → 2 Ingress, 3 path rule (`/`, `/kibana`, `/api/healthz`) tới 2+ backend |
+| N4 | `kubectl -n veloshare get netpol` ; chứng minh cấm/cho phép: `make demo` bước 7 |
+| N5 | `kubectl -n veloshare get endpointslices` → mọi Service đều có endpoint, không có `<none>` |
+
+### 4.5 Application Observability and Maintenance
+
+| ID | Kiểm chứng |
+|---|---|
+| O1/O2 | `kubectl -n veloshare get deploy rider -o jsonpath='{.spec.template.spec.containers[0].livenessProbe}{"\n"}{.spec.template.spec.containers[0].readinessProbe}'` |
+| O3 | *(Khuyến nghị, không bắt buộc)* elasticsearch/kibana có `startupProbe`; lab độc lập: `k8s/labs/probes-demo.yaml`. Bốn service FastAPI khởi động dưới 1 giây nên cố ý không dùng |
+| O4 | Xem [§8](#8-giới-hạn-đã-biết) và bảng lệnh debug ngay dưới đây |
+| O5 | `grep -rh '^apiVersion' k8s/ \| sort -u` → chỉ có API ổn định: `v1`, `apps/v1`, `batch/v1`, `autoscaling/v2`, `networking.k8s.io/v1`, `rbac.authorization.k8s.io/v1` (cộng `kustomize.config.k8s.io/v1beta1` của chính file kustomization, không phải API của cluster). Không có `extensions/v1beta1` hay `autoscaling/v2beta*` |
+
+### Lệnh debug (O4)
+
+```sh
+kubectl -n veloshare get pods -o wide                 # trạng thái tổng quan
+kubectl -n veloshare describe pod <pod>               # Events ở cuối giải thích hầu hết lỗi
+kubectl -n veloshare get events --sort-by=.lastTimestamp
+kubectl -n veloshare get svc,endpointslices           # Service không có endpoint = sai selector
+kubectl -n veloshare top pods                         # cần metrics-server
+kubectl -n veloshare logs deploy/<svc> -c <svc>       # pod có 3 container nên BẮT BUỘC có -c
+kubectl -n veloshare logs deploy/<svc> -c log-agent   # log JSON qua sidecar Fluent Bit
+kubectl -n veloshare exec postgres-0 -- psql -U postgres -d veloshare -c '\dt trips.*'
 kubectl -n veloshare exec deploy/redis -- redis-cli XRANGE trip.completed - +
 ```
 
----
+**Xuất trạng thái thật ra file để đọc/nộp:**
 
-## Lưu ý bảo mật
+```sh
+make evidence          # ghi docs/evidence/*.yaml (chỉ đọc, bỏ qua mọi bước phá huỷ)
+```
 
-Đây là môi trường học tập chạy cục bộ. **Không dùng cấu hình này cho production.**
-
-Đã làm đúng:
-
-- **Không có credential nào trong git.** Toàn bộ secret nằm trong `env/*.env` (gitignore) và chỉ
-  được đưa thẳng vào cluster; Helm không hề chứa hay render mật khẩu.
-- Mật khẩu người dùng được băm bằng `scrypt`, không lưu dạng plaintext.
-- Mật khẩu không xuất hiện trong log (sự kiện `login` chỉ ghi `outcome`), cũng không xuất hiện
-  trong manifest của pod.
-
-Còn hạn chế:
-
-- Toàn bộ lưu lượng là **HTTP thuần**, chưa có TLS.
-- Secret trong Kubernetes chỉ được **encode base64** trong etcd, chưa mã hoá.
-- Elasticsearch chạy với `xpack.security.enabled=false`.
-- Chưa có cơ chế thu hồi (revoke) JWT trước khi hết hạn.
-
-Trước khi dùng thật cần tối thiểu: bật TLS, quản lý secret bằng Sealed Secrets / External
-Secrets / Vault, bật encryption-at-rest cho etcd, bật bảo mật cho Elasticsearch, và thêm cơ chế
-thu hồi token.
+Secret **không bao giờ** được xuất dạng YAML — chỉ có output `kubectl describe secret`
+(tên key + số byte, không có giá trị) ghi ra `docs/evidence/secret-*.txt`.
 
 ---
 
-## Giới hạn đã biết
+## 7. Kịch bản demo 5–10 phút
 
-Ngoài các giới hạn bảo mật ở trên, đây là những điểm cần biết trước khi đánh giá hệ thống:
+Chạy có hướng dẫn, dừng chờ Enter giữa các bước:
 
-| Giới hạn | Chi tiết |
+```sh
+make demo                  # cả 9 bước
+./scripts/demo.sh 7        # chỉ bước 7 (NetworkPolicy)
+./scripts/demo.sh --no-pause
+```
+
+Mỗi bước trình bày **ba phần** để người chấm lần được từ mã nguồn tới cluster đang chạy:
+
+| Phần | Nội dung |
 |---|---|
-| **EFK tắt mặc định** | `global.logging.enabled: false`. Elasticsearch + Kibana cần thêm ~350m CPU / 400Mi RAM (request) và vượt `ResourceQuota` của namespace. Sidecar Fluent Bit vẫn chạy trên mọi pod ứng dụng và ghi ra stdout, nên pattern sidecar + `emptyDir` dùng chung vẫn quan sát được. Bật lại bằng `--set global.logging.enabled=true` **kèm** nâng quota |
-| **Redis không bền vững** | Redis dùng `emptyDir`, mất dữ liệu khi pod restart. Đây là chủ ý: bản ghi chuyến đi luôn nằm ở Postgres, Redis chỉ giữ khoá `trip:active:*` (có TTL) và stream `trip.completed` |
-| **Quota sát với thực tế sử dụng** | Quota được tính vừa đủ cho 7 pod lõi (0.31/0.5 CPU, 992/1200Mi request). Thêm replica thủ công hoặc bật HPA scale mạnh có thể chạm trần — đó cũng chính là cách demo `ResourceQuota` hoạt động |
-| **Kustomize demo tách rời** | `kustomize-demo/` overlay một Deployment placeholder độc lập, không phải service thật. Cố ý: tránh để Helm và Kustomize cùng sở hữu một resource |
-| **Blue/green là lab rời** | `bluegreen-demo.yaml` không nằm trong Helm chart; chạy bằng `make bluegreen-demo` |
-| **Cluster cục bộ** | Chỉ chạy trên `kind`, dùng `local-path` StorageClass và ingress-nginx map cổng 80/443 của host. Chưa kiểm thử trên cloud provider nào |
-| **Không có test tự động cho code Python** | Kiểm chứng bằng `helm lint` / `helm template` cho chart và `scripts/smoke-test.sh` cho hệ thống đang chạy |
+| `MANIFEST` | Tài nguyên được **khai báo** ở đâu — đường dẫn file, số dòng thật, trích đoạn in kèm |
+| `LIVE` | Lệnh **chính xác** (in kèm tiền tố `$ `) và output nguyên văn từ cluster |
+| `EXPORT` | Object đang chạy ghi ra `docs/evidence/*.yaml` |
+
+| Bước | Nội dung | Yêu cầu CKAD |
+|---|---|---|
+| 1 | Pod đều Running/Ready; Service đều có endpoint | N5, P1, O1, O2 |
+| 2 | Ingress định tuyến `/` và `/api/healthz` | N2, N3, O5 |
+| 3 | Inject ConfigMap/Secret; chart render 0 Secret | C1, C2 |
+| 4 | Probe: xoá pod `rider`, endpoint rớt rồi quay lại khi readiness pass | O1, O2, O3 |
+| 5 | Rolling update + đảo blue/green bằng một lệnh patch selector | P2, P3, D6 |
+| 6 | HPA đang tính được metric thật | P4 |
+| 7 | NetworkPolicy: cùng image, cùng URL, **chỉ khác label** → một bên timeout, một bên 200 | N4 |
+| 8 | Ghi dữ liệu → xoá `postgres-0` → đọc lại từ cùng PVC | D5 |
+| 9 | `helm history` + rollback; `diff` hai overlay Kustomize | P5, P6 |
+
+Các bước thay đổi trạng thái cluster (4, 5, 8, 9) **luôn hỏi xác nhận** và tự khôi phục trạng
+thái ban đầu sau khi chạy.
+
+---
+
+## 8. Giới hạn đã biết
+
+**Về triển khai**
+
+- **Helm và `k8s/` là hai đường thay thế nhau, không phải hai lớp.** Chạy đồng thời sẽ dẫn tới
+  hai chủ sở hữu cho cùng một object. `scripts/deploy.sh` chặn sẵn, nhưng `kubectl apply -k`
+  gọi trực tiếp thì không có gì chặn.
+- `k8s/` **được sinh ra** từ `helm/veloshare`. Sửa tay trong `k8s/base/` sẽ bị `make gen-k8s`
+  ghi đè — sửa chart rồi sinh lại.
+- Chỉ **`pricing`** được build ở hai tag (`0.1.0` cho overlay `dev`, `0.2.0` cho overlay `prod`)
+  để minh hoạ pin image theo môi trường. Sáu service còn lại chỉ tồn tại đúng một tag `0.1.0`
+  trong cluster kind nên **không** được pin trong overlay — pin một tag chưa từng nạp sẽ render
+  ra manifest không kéo được image. Tag `0.2.0` build từ **cùng một source**, chỉ khác giá trị
+  `APP_VERSION` nướng vào lúc build, nên không có khác biệt hành vi ngoài `GET /version`.
+
+**Về vận hành**
+
+- **metrics-server không nằm trong `make up`** — phải chạy `make metrics-server`, nếu không HPA
+  hiển thị `cpu <unknown>` và `kubectl top` báo lỗi.
+- **Elasticsearch + Kibana mặc định TẮT** (`global.logging.enabled: false`) vì thêm ~350m CPU /
+  400Mi vào requests, vượt `ResourceQuota` của namespace. Bật thì phải nâng quota cùng lúc —
+  xem ví dụ `--set` trong [`helm/veloshare/values.yaml`](./helm/veloshare/values.yaml).
+  Sidecar Fluent Bit và `emptyDir` dùng chung vẫn hoạt động khi tắt, chỉ đổi đích xuất log.
+- `fleet-monitor` là **tên gọi lệch nghĩa**: trước đây nó poll `/healthz` mỗi 5 phút, nay đã đổi
+  thành job báo cáo hằng ngày; tên giữ nguyên để không phải sửa toàn bộ umbrella chart.
+- Báo cáo của `fleet-monitor` chỉ in ra **log của Job**. Gửi email/Slack cần thêm Secret
+  SMTP/webhook — ngoài phạm vi môi trường học tập cục bộ.
+
+**Về bảo mật — đây là môi trường học tập, không phải chuẩn mực production**
+
+- Elasticsearch chạy `xpack.security.enabled=false`; toàn bộ giao tiếp là **HTTP thuần, không TLS**.
+- Secret chỉ được **base64 trong etcd**, không mã hoá. Môi trường thật nên dùng
+  Sealed Secrets / External Secrets / Vault và bật encryption-at-rest.
+- `env/*.env` nằm trên đĩa local ở dạng plaintext (đã được `.gitignore` chặn).
+
+**Về dữ liệu**
+
+- Redis **không bền vững** (không AOF/RDB): mất pod là mất `trip:active:*` và stream
+  `trip.completed`. Bản ghi chuyến đi luôn nằm trong PostgreSQL nên không mất dữ liệu nghiệp vụ.
+- PostgreSQL chạy **một replica**, không có replica đọc và không có backup tự động. Overlay
+  `prod` cố ý **không** tăng replica cho postgres/redis: một StatefulSet với PVC RWO không tự
+  trở thành HA chỉ vì tăng số replica.
+- Chưa có test tự động cho code Python. Kiểm chứng dựa vào `helm lint` / `helm template` cho
+  chart và `make smoke-test` cho hệ thống đang chạy.
 
 ---
 
@@ -607,10 +496,22 @@ Ngoài các giới hạn bảo mật ở trên, đây là những điểm cần 
 | [`docs/ckad-checklist.md`](./docs/ckad-checklist.md) | **Bản đồ yêu cầu CKAD → file + lệnh kiểm chứng** (dành cho người chấm) |
 | [`CLAUDE.md`](./CLAUDE.md) | Quy ước phát triển của dự án |
 
-Demo trực tiếp theo từng bước của checklist:
+### Cấu trúc thư mục
 
-```sh
-./scripts/demo.sh          # đi hết 9 bước demo, dừng chờ Enter giữa các bước
-./scripts/demo.sh 7        # chỉ chạy bước 7 (NetworkPolicy)
-./scripts/smoke-test.sh    # kiểm tra E2E không tương tác, exit != 0 nếu có lỗi
+```
+services/<svc>/          Mã nguồn + Dockerfile của từng service (7 service)
+helm/veloshare/          Umbrella chart, 9 subchart phụ thuộc  ─┐
+k8s/                     Manifest thô — SINH RA từ chart        ─┴─ hai đường thay thế nhau
+  base/                    Namespace, ConfigMap, Service, Deployment, StatefulSet, CronJob, HPA
+  overlays/dev|prod/       Kustomize overlay (replicas + ResourceQuota)
+  network/                 Ingress + NetworkPolicy
+  security/                ServiceAccount + Role + RoleBinding
+  quota/                   ResourceQuota + LimitRange
+  storage/                 PersistentVolumeClaim
+  labs/                    Lab độc lập: blue/green, PVC, probes, kustomize-demo
+env/                     Cấu hình + credential từng pod (*.env gitignored, chỉ commit *.env.template)
+scripts/                 build.sh, deploy.sh, gen-k8s.sh, demo.sh, smoke-test.sh, seed-data.sh, apply-secrets.sh
+docs/                    Tài liệu + evidence/ (trạng thái cluster xuất ra bằng `make evidence`)
+kind-config.yaml         Định nghĩa cluster kind 3 node
+Makefile                 Các lệnh vận hành
 ```

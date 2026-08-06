@@ -1,0 +1,90 @@
+# Lab 5.3, pair 1 (fixed) — the only change from broken/1-deployment-selector.yaml
+# is the template's app.kubernetes.io/instance label, now matching the
+# selector. Everything else is byte-for-byte identical.
+#
+# Note this is NOT something you could apply as a patch to the broken object
+# even if it had been created (it wasn't -- validation rejected it): a
+# Deployment's spec.selector field is IMMUTABLE after creation. If a
+# selector mismatch is discovered on a Deployment that DID get created
+# (e.g. it slipped in as a subset-but-not-quite-mismatched selector, which
+# validation allows in some edge cases), the only fix is delete + recreate,
+# never `kubectl apply` or `kubectl patch` on .spec.selector.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lab-triage-selector
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "5.3"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: pricing
+      app.kubernetes.io/instance: lab-triage-selector
+      lab: "5.3"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: pricing
+        app.kubernetes.io/part-of: veloshare
+        app.kubernetes.io/component: ckad-lab
+        app.kubernetes.io/instance: lab-triage-selector   # <-- fixed, now matches
+        lab: "5.3"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: pricing
+          image: veloshare/pricing:0.1.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          volumeMounts:
+            - name: logs
+              mountPath: /var/log/veloshare
+            - name: tmp
+              mountPath: /tmp
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 25m
+              memory: 96Mi
+            limits:
+              cpu: 150m
+              memory: 192Mi
+      volumes:
+        - name: logs
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

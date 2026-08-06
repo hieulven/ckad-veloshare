@@ -1,0 +1,51 @@
+# Lab 3.4, rejection case 2 — LimitRange, via a bare Pod.
+#
+# Asks for 4 CPU per container against a LimitRange max of 2.
+#
+# EXPECTED SYMPTOM — contrast this with the Deployment case, which is the whole
+# reason both files exist:
+#
+#   $ kubectl apply -f rejected/pod-over-limitrange.yaml
+#   Error from server (Forbidden): error when creating "...": pods
+#   "lab-over-limitrange" is forbidden: [maximum cpu usage per Container is 2,
+#   but request is 4, maximum cpu usage per Container is 2, but limit is 4]
+#
+# Applying a POD hits admission control immediately, so kubectl prints the error
+# on your terminal and nothing is created. Applying a DEPLOYMENT succeeds and
+# fails later, silently, on the ReplicaSet. Same admission plugin, completely
+# different debugging experience -- know which one you are looking at.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lab-over-limitrange
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "3.4"
+spec:
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: pricing
+      image: veloshare/pricing:0.1.0
+      imagePullPolicy: IfNotPresent
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        capabilities:
+          drop:
+            - ALL
+      resources:
+        requests:
+          cpu: "4"      # <-- over LimitRange max (2)
+          memory: 2Gi   # <-- over LimitRange max (1Gi)
+        limits:
+          cpu: "4"
+          memory: 2Gi

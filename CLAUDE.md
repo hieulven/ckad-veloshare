@@ -17,16 +17,21 @@ make up                # full bring-up: cluster -> ingress -> secrets -> images 
 make env-init           # create env/*.env from templates (once, local only, gitignored)
 make secrets            # apply env/*.env to the cluster as per-pod Secrets (refuses on leftover change-me)
 make images             # docker build every service image veloshare/<svc>:0.1.0
+make images-demo-tag    # build+load pricing at DEMO_TAG (0.2.0) so k8s/overlays/prod pins a real second tag
 make load               # kind load docker-image for every service into cluster `veloshare`
 make lint               # helm lint ./helm/veloshare
 make template           # helm template (dry-run render, no cluster needed)
 make deploy             # lint, then helm upgrade --install veloshare ./helm/veloshare -n veloshare
+make gen-k8s             # scripts/gen-k8s.sh — regenerate k8s/ raw manifests from the Helm chart
+make deploy-kubectl      # scripts/deploy.sh kubectl [dev|prod] — deploy via k8s/overlays instead of
+                          # Helm; refuses to run while the other path owns the namespace (FORCE=1 to override)
 make history            # helm history veloshare -n veloshare
 make rollback REV=<n>   # helm rollback veloshare <n> -n veloshare
 make metrics-server     # install metrics-server (kind needs --kubelet-insecure-tls) so the HPA works
 make smoke-test         # scripts/smoke-test.sh — non-interactive E2E check, non-zero exit on failure
 make demo               # scripts/demo.sh — step-by-step walkthrough of the CKAD demo checklist
-make bluegreen-demo     # apply bluegreen-demo.yaml (standalone lab, not part of the chart)
+make evidence           # AUTO=1 scripts/demo.sh — read-only pass, refreshes docs/evidence/*.yaml
+make bluegreen-demo     # apply k8s/labs/bluegreen-demo.yaml (standalone lab, not part of the chart)
 make uninstall          # helm uninstall veloshare -n veloshare  (ask before running)
 make cluster-down       # kind delete cluster --name veloshare   (ask before running)
 ```
@@ -39,7 +44,7 @@ and hitting the running service through `kubectl port-forward` or the ingress fo
 notice a new image on its own:
 
 ```sh
-docker build -t veloshare/<service>:0.1.0 ./<service>
+docker build -t veloshare/<service>:0.1.0 ./services/<service>
 kind load docker-image veloshare/<service>:0.1.0 --name veloshare
 kubectl -n veloshare rollout restart deploy/<service>
 ```
@@ -189,10 +194,19 @@ so it matches any `Host` header — `http://localhost/` works with no `/etc/host
 - Elasticsearch + Kibana are **off by default** (`global.logging.enabled: false`) because
   they don't fit the namespace `ResourceQuota`. This is a values flip, not a missing
   feature — see the Logging section above.
-- `kustomize-demo/` deliberately overlays a **standalone placeholder** Deployment rather
-  than a real veloshare service, so that Helm and Kustomize never both own the same live
-  resource. Same for `bluegreen-demo.yaml`, `pvc-demo.yaml` and `probes-demo.yaml`: they
-  are standalone labs applied by hand (or via `make bluegreen-demo`), not chart members.
+- `k8s/overlays/` (`dev`/`prod`) are real Kustomize overlays over the actual veloshare
+  services — generated from the Helm chart by `scripts/gen-k8s.sh` (`make gen-k8s`) — and
+  are an alternative deploy path to Helm, never applied alongside it: `scripts/deploy.sh`
+  refuses to run one path while the other owns the namespace (`FORCE=1` to override). The
+  overlays now also pin a real per-environment image tag: `dev` pins `veloshare/pricing:0.1.0`,
+  `prod` pins `:0.2.0` — both genuinely built and loaded via `make images-demo-tag`, so a
+  running Pod's reported version (`GET /version`) proves which image it's actually running.
+  The other six services stay unpinned (one tag, `0.1.0`, ever exists in the kind cluster;
+  pinning an untagged/never-loaded tag would render an unpullable manifest). `k8s/labs/kustomize-demo/`
+  is a separate, minimal **standalone teaching lab** against a public nginx image, kept apart
+  so it never competes for ownership with either deploy path. Same reasoning covers
+  `k8s/labs/bluegreen-demo.yaml`, `k8s/labs/pvc-demo.yaml`, and `k8s/labs/probes-demo.yaml`:
+  standalone labs applied by hand (or via `make bluegreen-demo`), not chart or overlay members.
 - The `pricing` Deployment has an optional `initCheck`-gated init container that waits
   for `rider` (TCP) and Postgres (`pg_isready`) before starting — even though `pricing`
   is stateless and calls neither. It exists purely to demonstrate the
@@ -207,10 +221,14 @@ so it matches any `Host` header — `http://localhost/` works with no `/etc/host
 
 - **Python**: 3.12, FastAPI + uvicorn, Pydantic v2 models, async `asyncpg` pool
   (created in `lifespan`, closed on shutdown). Every service exposes `GET /healthz` ->
-  `{"status": "ok"}`. Config only from env vars (`require_env` fails fast for anything
-  secret — no fallback default). JSON logging via `pythonjsonlogger`, one line per
-  request plus named business events (`login`, `rider_created`, `trip_completed`, ...),
-  each carrying `request_id`.
+  `{"status": "ok"}` — keep that response shape exact; `scripts/smoke-test.sh` and probes
+  compare it verbatim. `pricing` additionally exposes `GET /version` -> `{"service":
+  "pricing", "version": "<tag>"}`, backed by the build-time `APP_VERSION` Docker `ARG`
+  (`scripts/build.sh` passes `--build-arg APP_VERSION=$TAG` to every build; a service
+  whose Dockerfile doesn't declare that `ARG` just ignores it). Config only from env vars
+  (`require_env` fails fast for anything secret — no fallback default). JSON logging via
+  `pythonjsonlogger`, one line per request plus named business events (`login`,
+  `rider_created`, `trip_completed`, ...), each carrying `request_id`.
 - **Docker**: `python:3.12-slim`, non-root user (`useradd --uid 10001`), entrypoint
   `uvicorn main:app --host 0.0.0.0 --port 8000`. `fleet-monitor` is `alpine` +
   `postgresql-client` (psql, not curl/jq — that was the old health-poll version).

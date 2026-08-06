@@ -1,0 +1,87 @@
+# Lab 4.1 — the backend half. Two replicas of the real pricing image so the
+# Service in front of it has something meaningful to load-balance across
+# (single-replica Services never expose a selector bug: there is only ever
+# one Endpoint to point at, right or wrong).
+#
+# Same hardening/resources baseline as lab 3.2/3.4 — see those READMEs for
+# why each field is there. Nothing new here; this Deployment exists purely
+# to be a stable ClusterIP backend for the Service/selector exercise below.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pricing
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "4.1"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: pricing
+      lab: "4.1"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: pricing
+        app.kubernetes.io/part-of: veloshare
+        app.kubernetes.io/component: ckad-lab
+        lab: "4.1"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: pricing
+          image: veloshare/pricing:0.1.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            # readOnlyRootFilesystem forces this — Python would otherwise try
+            # to write .pyc files next to the source under /app.
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          volumeMounts:
+            - name: logs
+              mountPath: /var/log/veloshare
+            - name: tmp
+              mountPath: /tmp
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 25m
+              memory: 96Mi
+            limits:
+              cpu: 150m
+              memory: 192Mi
+      volumes:
+        - name: logs
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

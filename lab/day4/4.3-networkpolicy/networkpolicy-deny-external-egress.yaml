@@ -1,0 +1,40 @@
+# Lab 4.3, step 4 — pricing may reach the cluster, never the internet.
+#
+# The NetworkPolicy API has no "deny" verb — every rule is an allow, and
+# policies are purely additive (see README Exam notes). There is no field
+# that means "block 0.0.0.0/0"; the only way to achieve that effect is the
+# idiom used here: allow-list the cluster's own address ranges and let the
+# implicit "everything else is dropped once a policy selects this Pod for
+# this direction" behaviour do the denying for you. 10.0.0.0/8 and
+# 172.16.0.0/12 cover kind's default pod CIDR (10.244.0.0/16) and service
+# CIDR (10.96.0.0/12) with headroom, plus the private ranges a cluster
+# network is built from — anything outside those two blocks, i.e. the
+# public internet, has no matching egress rule and is dropped.
+#
+# This intentionally does NOT re-list DNS or the frontend->pricing rule:
+# NetworkPolicy rules for the same Pod, across multiple NetworkPolicy
+# objects and even multiple rules in one object, are unioned (OR'd)
+# together, never replaced. This file only needs to add the one permission
+# pricing doesn't have yet.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: lab-deny-external-egress
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "4.3"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: pricing
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+        - ipBlock:
+            cidr: 172.16.0.0/12

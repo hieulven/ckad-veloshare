@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pricing
+  namespace: veloshare
+  labels:
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/part-of: veloshare
+data:
+  PRICING_UNLOCK_FEE_CENTS: '100'
+  PRICING_TIER_RATES: '{"standard": 15, "member": 8, "day_pass": 5}'

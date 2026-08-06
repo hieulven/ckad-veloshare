@@ -1,0 +1,106 @@
+# Lab 5.3, pair 2 (fixed) — Deployment is byte-for-byte identical to
+# broken/2-service-targetport.yaml (it was never the problem). The only
+# change is the Service's targetPort: 8000, matching the pricing
+# container's actual containerPort/EXPOSE. Endpoints looked the same
+# before and after this fix -- only the traffic behind them changes, which
+# is exactly the trap this pair exists to teach.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lab-triage-port
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "5.3"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: pricing
+      app.kubernetes.io/instance: lab-triage-port
+      lab: "5.3"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: pricing
+        app.kubernetes.io/part-of: veloshare
+        app.kubernetes.io/component: ckad-lab
+        app.kubernetes.io/instance: lab-triage-port
+        lab: "5.3"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: pricing
+          image: veloshare/pricing:0.1.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          volumeMounts:
+            - name: logs
+              mountPath: /var/log/veloshare
+            - name: tmp
+              mountPath: /tmp
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 25m
+              memory: 96Mi
+            limits:
+              cpu: 150m
+              memory: 192Mi
+      volumes:
+        - name: logs
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lab-triage-port
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "5.3"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/instance: lab-triage-port
+    lab: "5.3"
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000   # <-- fixed: matches the container's actual port

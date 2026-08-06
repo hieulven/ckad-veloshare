@@ -1,0 +1,39 @@
+# Lab 3.4 — per-container floor, ceiling, and defaults.
+#
+# A LimitRange does two distinct jobs, and it is worth keeping them apart:
+#
+#   default / defaultRequest   MUTATING. A container that declares no resources
+#                              gets these injected at admission. This is what
+#                              makes a bare `kubectl run` legal in a namespace
+#                              that has a ResourceQuota on requests.cpu -- without
+#                              it, the Pod would be rejected for having no
+#                              request to count.
+#
+#   min / max                  VALIDATING. A container asking outside this range
+#                              is rejected outright.
+#
+# Same shape as the platform's k8s/quota/limitrange-veloshare-limits.yaml.
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: veloshare-lab-limits
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "3.4"
+spec:
+  limits:
+    - type: Container
+      default:               # -> container.resources.limits if unset
+        cpu: 100m
+        memory: 128Mi
+      defaultRequest:        # -> container.resources.requests if unset
+        cpu: 25m
+        memory: 64Mi
+      min:
+        cpu: 5m
+        memory: 16Mi
+      max:
+        cpu: "2"
+        memory: 1Gi

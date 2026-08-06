@@ -1,0 +1,329 @@
+apiVersion: v1
+items:
+- addressType: IPv4
+  apiVersion: discovery.k8s.io/v1
+  endpoints:
+  - addresses:
+    - 10.244.1.4
+    conditions:
+      ready: true
+      serving: true
+      terminating: false
+    nodeName: veloshare-worker
+    targetRef:
+      kind: Pod
+      name: frontend-6bcdf9699c-4r469
+      namespace: veloshare
+      uid: 924ffaa9-caee-40aa-a3f7-d25d7601436a
+  kind: EndpointSlice
+  metadata:
+    annotations:
+      endpoints.kubernetes.io/last-change-trigger-time: "2026-08-05T17:06:59Z"
+    creationTimestamp: "2026-08-05T15:33:07Z"
+    generateName: frontend-
+    generation: 5
+    labels:
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: frontend
+      app.kubernetes.io/part-of: veloshare
+      app.kubernetes.io/version: 0.1.0
+      endpointslice.kubernetes.io/managed-by: endpointslice-controller.k8s.io
+      helm.sh/chart: frontend-0.1.0
+      kubernetes.io/service-name: frontend
+    name: frontend-xlcnw
+    namespace: veloshare
+    ownerReferences:
+    - apiVersion: v1
+      blockOwnerDeletion: true
+      controller: true
+      kind: Service
+      name: frontend
+      uid: c5b9248c-f01f-467c-b226-d46a87f5590f
+    resourceVersion: "75011"
+    uid: 8b6db9e3-cdce-4be1-818b-daf2004f1bd9
+  ports:
+  - name: http
+    port: 8080
+    protocol: TCP
+- addressType: IPv4
+  apiVersion: discovery.k8s.io/v1
+  endpoints:
+  - addresses:
+    - 10.244.1.12
+    conditions:
+      ready: true
+      serving: true
+      terminating: false
+    hostname: postgres-0
+    nodeName: veloshare-worker
+    targetRef:
+      kind: Pod
+      name: postgres-0
+      namespace: veloshare
+      uid: 006302c3-d522-4b37-9d00-981bc1ec5404
+  kind: EndpointSlice
+  metadata:
+    annotations:
+      endpoints.kubernetes.io/last-change-trigger-time: "2026-08-05T17:38:44Z"
+    creationTimestamp: "2026-08-05T15:33:06Z"
+    generateName: postgres-
+    generation: 10
+    labels:
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: postgres
+      app.kubernetes.io/part-of: veloshare
+      app.kubernetes.io/version: 0.1.0
+      endpointslice.kubernetes.io/managed-by: endpointslice-controller.k8s.io
+      helm.sh/chart: postgres-0.1.0
+      kubernetes.io/service-name: postgres
+      service.kubernetes.io/headless: ""
+    name: postgres-kq4fw
+    namespace: veloshare
+    ownerReferences:
+    - apiVersion: v1
+      blockOwnerDeletion: true
+      controller: true
+      kind: Service
+      name: postgres
+      uid: 93749a85-efa2-46e5-8cfa-fc86b71428cf
+    resourceVersion: "79402"
+    uid: 6085088a-6b5c-4ab3-ab98-c5b37f027880
+  ports:
+  - name: postgres
+    port: 5432
+    protocol: TCP
+- addressType: IPv4
+  apiVersion: discovery.k8s.io/v1
+  endpoints:
+  - addresses:
+    - 10.244.2.43
+    conditions:
+      ready: true
+      serving: true
+      terminating: false
+    nodeName: veloshare-worker2
+    targetRef:
+      kind: Pod
+      name: pricing-76d4b8ffbb-jwr4x
+      namespace: veloshare
+      uid: 2b6b6d7c-c55a-4d05-8ecd-1384cd6af77d
+  kind: EndpointSlice
+  metadata:
+    annotations:
+      endpoints.kubernetes.io/last-change-trigger-time: "2026-08-06T00:42:08Z"
+    creationTimestamp: "2026-08-05T15:33:06Z"
+    generateName: pricing-
+    generation: 27
+    labels:
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: pricing
+      app.kubernetes.io/part-of: veloshare
+      app.kubernetes.io/version: 0.1.0
+      endpointslice.kubernetes.io/managed-by: endpointslice-controller.k8s.io
+      helm.sh/chart: pricing-0.1.0
+      kubernetes.io/service-name: pricing
+    name: pricing-z2xsz
+    namespace: veloshare
+    ownerReferences:
+    - apiVersion: v1
+      blockOwnerDeletion: true
+      controller: true
+      kind: Service
+      name: pricing
+      uid: f9f29fe2-3cf4-4ca0-95bc-0beb8aa164e2
+    resourceVersion: "86484"
+    uid: 66dc4566-508b-4912-a29c-d11df83a6f09
+  ports:
+  - name: http
+    port: 8080
+    protocol: TCP
+- addressType: IPv4
+  apiVersion: discovery.k8s.io/v1
+  endpoints:
+  - addresses:
+    - 10.244.2.2
+    conditions:
+      ready: true
+      serving: true
+      terminating: false
+    nodeName: veloshare-worker2
+    targetRef:
+      kind: Pod
+      name: redis-66c8df98b4-zwbvn
+      namespace: veloshare
+      uid: 391259d5-2a9d-420a-a7b0-e7981f56d89a
+  kind: EndpointSlice
+  metadata:
+    annotations:
+      endpoints.kubernetes.io/last-change-trigger-time: "2026-08-05T15:33:42Z"
+    creationTimestamp: "2026-08-05T15:33:06Z"
+    generateName: redis-
+    generation: 3
+    labels:
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: redis
+      app.kubernetes.io/part-of: veloshare
+      app.kubernetes.io/version: 0.1.0
+      endpointslice.kubernetes.io/managed-by: endpointslice-controller.k8s.io
+      helm.sh/chart: redis-0.1.0
+      kubernetes.io/service-name: redis
+    name: redis-ztqgp
+    namespace: veloshare
+    ownerReferences:
+    - apiVersion: v1
+      blockOwnerDeletion: true
+      controller: true
+      kind: Service
+      name: redis
+      uid: 30b4e4f3-4405-42ac-80ce-ed1c1bc3a844
+    resourceVersion: "72931"
+    uid: d6100827-8b8b-44a4-94d5-a0ff10e8598f
+  ports:
+  - name: redis
+    port: 6379
+    protocol: TCP
+- addressType: IPv4
+  apiVersion: discovery.k8s.io/v1
+  endpoints:
+  - addresses:
+    - 10.244.2.22
+    conditions:
+      ready: true
+      serving: true
+      terminating: false
+    nodeName: veloshare-worker2
+    targetRef:
+      kind: Pod
+      name: rider-55ccb94bc-drpkr
+      namespace: veloshare
+      uid: fe1a0133-34e4-4d75-86c9-d1be558210a6
+  kind: EndpointSlice
+  metadata:
+    annotations:
+      endpoints.kubernetes.io/last-change-trigger-time: "2026-08-05T17:34:24Z"
+    creationTimestamp: "2026-08-05T15:33:06Z"
+    generateName: rider-
+    generation: 13
+    labels:
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: rider
+      app.kubernetes.io/part-of: veloshare
+      app.kubernetes.io/version: 0.1.0
+      endpointslice.kubernetes.io/managed-by: endpointslice-controller.k8s.io
+      helm.sh/chart: rider-0.1.0
+      kubernetes.io/service-name: rider
+    name: rider-6b5q7
+    namespace: veloshare
+    ownerReferences:
+    - apiVersion: v1
+      blockOwnerDeletion: true
+      controller: true
+      kind: Service
+      name: rider
+      uid: 14fa8606-13b8-400c-9647-efe06e5a7b81
+    resourceVersion: "78671"
+    uid: 15ed3055-9cc9-458b-a58b-e202172f5df1
+  ports:
+  - name: http
+    port: 8080
+    protocol: TCP
+- addressType: IPv4
+  apiVersion: discovery.k8s.io/v1
+  endpoints:
+  - addresses:
+    - 10.244.1.2
+    conditions:
+      ready: true
+      serving: true
+      terminating: false
+    nodeName: veloshare-worker
+    targetRef:
+      kind: Pod
+      name: station-5b78f8dfff-4kw5z
+      namespace: veloshare
+      uid: 7fab2488-00ad-40cc-babf-94128a81a3a7
+  kind: EndpointSlice
+  metadata:
+    annotations:
+      endpoints.kubernetes.io/last-change-trigger-time: "2026-08-05T17:07:07Z"
+    creationTimestamp: "2026-08-05T15:33:06Z"
+    generateName: station-
+    generation: 4
+    labels:
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: station
+      app.kubernetes.io/part-of: veloshare
+      app.kubernetes.io/version: 0.1.0
+      endpointslice.kubernetes.io/managed-by: endpointslice-controller.k8s.io
+      helm.sh/chart: station-0.1.0
+      kubernetes.io/service-name: station
+    name: station-c8qqx
+    namespace: veloshare
+    ownerReferences:
+    - apiVersion: v1
+      blockOwnerDeletion: true
+      controller: true
+      kind: Service
+      name: station
+      uid: e0d2dbe7-8e0e-4c51-af2c-5ff0b292095b
+    resourceVersion: "75036"
+    uid: 8dde32e0-1f41-4137-bcdc-7e0e989a6b44
+  ports:
+  - name: http
+    port: 8080
+    protocol: TCP
+- addressType: IPv4
+  apiVersion: discovery.k8s.io/v1
+  endpoints:
+  - addresses:
+    - 10.244.2.3
+    conditions:
+      ready: true
+      serving: true
+      terminating: false
+    nodeName: veloshare-worker2
+    targetRef:
+      kind: Pod
+      name: trip-6cb444668-rx9fc
+      namespace: veloshare
+      uid: 01d397e1-67f4-4263-b9a6-d30ed9e138c7
+  kind: EndpointSlice
+  metadata:
+    annotations:
+      endpoints.kubernetes.io/last-change-trigger-time: "2026-08-05T17:07:07Z"
+    creationTimestamp: "2026-08-05T15:33:07Z"
+    generateName: trip-
+    generation: 5
+    labels:
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: trip
+      app.kubernetes.io/part-of: veloshare
+      app.kubernetes.io/version: 0.1.0
+      endpointslice.kubernetes.io/managed-by: endpointslice-controller.k8s.io
+      helm.sh/chart: trip-0.1.0
+      kubernetes.io/service-name: trip
+    name: trip-v5khj
+    namespace: veloshare
+    ownerReferences:
+    - apiVersion: v1
+      blockOwnerDeletion: true
+      controller: true
+      kind: Service
+      name: trip
+      uid: 9dd92466-a51a-46ee-94d3-066604e528e0
+    resourceVersion: "75041"
+    uid: 616b3b8f-806c-4f41-b927-2d8cd6dcf5a0
+  ports:
+  - name: http
+    port: 8080
+    protocol: TCP
+kind: List
+metadata:
+  resourceVersion: ""

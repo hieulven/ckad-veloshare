@@ -1,0 +1,2020 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/part-of: veloshare
+  name: veloshare
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: veloshare
+    app.kubernetes.io/part-of: veloshare
+  name: veloshare-quota
+  namespace: veloshare
+spec:
+  hard:
+    limits.cpu: "2"
+    limits.memory: 2560Mi
+    pods: "15"
+    requests.cpu: 500m
+    requests.memory: 1200Mi
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/component: rbac-demo
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: veloshare
+    app.kubernetes.io/part-of: veloshare
+  name: pod-lister
+  namespace: veloshare
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/component: rbac-demo
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: veloshare
+    app.kubernetes.io/part-of: veloshare
+  name: pod-lister
+  namespace: veloshare
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/component: rbac-demo
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: veloshare
+    app.kubernetes.io/part-of: veloshare
+  name: pod-lister
+  namespace: veloshare
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: pod-lister
+subjects:
+- kind: ServiceAccount
+  name: pod-lister
+  namespace: veloshare
+---
+apiVersion: v1
+data:
+  fluent-bit.conf: |
+    [SERVICE]
+        Parsers_File parsers.conf
+        Flush        5
+        Log_Level    info
+        Daemon       Off
+
+    [INPUT]
+        Name              tail
+        Path              /var/log/veloshare/*.log
+        Parser            json
+        Tag               veloshare.*
+        Refresh_Interval  5
+        Read_from_Head    true
+        # Poll via stat instead of inotify. Every sidecar shares the host
+        # kernel's inotify instance budget (one kernel for all kind nodes), so
+        # inotify watchers exhaust it and the input dies with EMFILE "Too many
+        # open files" when several pods start at once.
+        Inotify_Watcher   Off
+    # Elasticsearch/Kibana are disabled (global.logging.enabled=false) — ship
+    # to the log-agent sidecar's own stdout instead, so `kubectl logs <pod> -c
+    # log-agent` still shows every app pod's JSON log lines.
+    [OUTPUT]
+        Name    stdout
+        Match   *
+        Format  json_lines
+  parsers.conf: |
+    [PARSER]
+        Name        json
+        Format      json
+        # App logs may emit either "time" or "timestamp" as the log field
+        # name; Time_Key only accepts one, so "time" is the default here —
+        # emit that field name from services for parsed timestamps.
+        Time_Key    time
+        Time_Format %Y-%m-%dT%H:%M:%S.%L%z
+        Time_Keep   On
+kind: ConfigMap
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: logging
+    app.kubernetes.io/part-of: veloshare
+  name: fluent-bit-config
+  namespace: veloshare
+---
+apiVersion: v1
+data:
+  init.sh: |
+    #!/bin/bash
+    set -euo pipefail
+
+    # schema + owning login role = one isolated tenant of the shared database
+    create_service_role() {
+      local schema="$1" role="$2" password="$3"
+      psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<EOSQL
+    CREATE SCHEMA IF NOT EXISTS ${schema};
+    CREATE ROLE ${role} LOGIN PASSWORD '${password}';
+    GRANT USAGE ON SCHEMA ${schema} TO ${role};
+    GRANT ALL ON SCHEMA ${schema} TO ${role};
+    ALTER ROLE ${role} SET search_path = ${schema};
+    EOSQL
+    }
+
+    create_service_role riders   rider   "${RIDER_PASSWORD}"
+    create_service_role stations station "${STATION_PASSWORD}"
+    create_service_role trips    trip    "${TRIP_PASSWORD}"
+kind: ConfigMap
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/part-of: veloshare
+  name: postgres-init
+  namespace: veloshare
+---
+apiVersion: v1
+data:
+  PRICING_TIER_RATES: '{"standard": 15, "member": 8, "day_pass": 5}'
+  PRICING_UNLOCK_FEE_CENTS: "100"
+kind: ConfigMap
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+  name: pricing
+  namespace: veloshare
+---
+apiVersion: v1
+data:
+  default.conf: |
+    server {
+        listen 8080;
+        location / {
+            proxy_pass http://127.0.0.1:8000;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        }
+    }
+kind: ConfigMap
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+  name: pricing-ambassador
+  namespace: veloshare
+---
+apiVersion: v1
+data:
+  default.conf: |
+    server {
+        listen 8080;
+        location / {
+            proxy_pass http://127.0.0.1:8000;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        }
+    }
+kind: ConfigMap
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: rider
+    app.kubernetes.io/part-of: veloshare
+  name: rider-ambassador
+  namespace: veloshare
+---
+apiVersion: v1
+data:
+  migrate.sql: |
+    CREATE TABLE IF NOT EXISTS riders (
+      id serial PRIMARY KEY,
+      name text NOT NULL,
+      email text UNIQUE NOT NULL,
+      tier text NOT NULL
+    );
+
+    ALTER TABLE riders ADD COLUMN IF NOT EXISTS password_hash text;
+kind: ConfigMap
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: rider
+    app.kubernetes.io/part-of: veloshare
+  name: rider-migration
+  namespace: veloshare
+---
+apiVersion: v1
+data:
+  default.conf: |
+    server {
+        listen 8080;
+        location / {
+            proxy_pass http://127.0.0.1:8000;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        }
+    }
+kind: ConfigMap
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: station
+    app.kubernetes.io/part-of: veloshare
+  name: station-ambassador
+  namespace: veloshare
+---
+apiVersion: v1
+data:
+  migrate.sql: |
+    CREATE TABLE IF NOT EXISTS stations (
+        id serial PRIMARY KEY,
+        name text NOT NULL,
+        capacity int NOT NULL,
+        docks_available int NOT NULL DEFAULT 0
+    );
+kind: ConfigMap
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: station
+    app.kubernetes.io/part-of: veloshare
+  name: station-migration
+  namespace: veloshare
+---
+apiVersion: v1
+data:
+  ACTIVE_TTL_SECONDS: "7200"
+  PRICING_URL: http://pricing.veloshare.svc.cluster.local
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  RIDER_URL: http://rider.veloshare.svc.cluster.local
+kind: ConfigMap
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: trip
+    app.kubernetes.io/part-of: veloshare
+  name: trip
+  namespace: veloshare
+---
+apiVersion: v1
+data:
+  default.conf: |
+    server {
+        listen 8080;
+        location / {
+            proxy_pass http://127.0.0.1:8000;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        }
+    }
+kind: ConfigMap
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: trip
+    app.kubernetes.io/part-of: veloshare
+  name: trip-ambassador
+  namespace: veloshare
+---
+apiVersion: v1
+data:
+  migrate.sql: |
+    CREATE TABLE IF NOT EXISTS trips (
+      id serial PRIMARY KEY,
+      rider_id int NOT NULL,
+      start_station int NOT NULL,
+      end_station int,
+      tier text NOT NULL,
+      started_at timestamptz NOT NULL DEFAULT now(),
+      ended_at timestamptz,
+      fare_cents int,
+      status text NOT NULL DEFAULT 'active'
+    );
+kind: ConfigMap
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: trip
+    app.kubernetes.io/part-of: veloshare
+  name: trip-migration
+  namespace: veloshare
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/part-of: veloshare
+  name: frontend
+  namespace: veloshare
+spec:
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+  selector:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: frontend
+  type: NodePort
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/part-of: veloshare
+  name: postgres
+  namespace: veloshare
+spec:
+  clusterIP: None
+  ports:
+  - name: postgres
+    port: 5432
+    targetPort: 5432
+  selector:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: postgres
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+  name: pricing
+  namespace: veloshare
+spec:
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+  selector:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: pricing
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: veloshare
+  name: redis
+  namespace: veloshare
+spec:
+  ports:
+  - name: redis
+    port: 6379
+    targetPort: 6379
+  selector:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: redis
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: rider
+    app.kubernetes.io/part-of: veloshare
+  name: rider
+  namespace: veloshare
+spec:
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+  selector:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: rider
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: station
+    app.kubernetes.io/part-of: veloshare
+  name: station
+  namespace: veloshare
+spec:
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+  selector:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: station
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: trip
+    app.kubernetes.io/part-of: veloshare
+  name: trip
+  namespace: veloshare
+spec:
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+  selector:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: trip
+  type: ClusterIP
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: veloshare
+    app.kubernetes.io/part-of: veloshare
+  name: veloshare-limits
+  namespace: veloshare
+spec:
+  limits:
+  - default:
+      cpu: 100m
+      memory: 128Mi
+    defaultRequest:
+      cpu: 25m
+      memory: 64Mi
+    max:
+      cpu: "2"
+      memory: 1Gi
+    min:
+      cpu: 5m
+      memory: 16Mi
+    type: Container
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: fleet-monitor
+    app.kubernetes.io/part-of: veloshare
+  name: fleet-monitor-reports
+  namespace: veloshare
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/part-of: veloshare
+  name: frontend
+  namespace: veloshare
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/name: frontend
+  template:
+    metadata:
+      annotations:
+        veloshare.io/environment: dev
+      labels:
+        app.kubernetes.io/instance: veloshare
+        app.kubernetes.io/name: frontend
+    spec:
+      containers:
+      - image: veloshare/frontend:0.1.0
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 2
+        name: frontend
+        ports:
+        - containerPort: 8080
+          name: http
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 2
+        resources:
+          limits:
+            cpu: 50m
+            memory: 64Mi
+          requests:
+            cpu: 10m
+            memory: 32Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 101
+          runAsNonRoot: true
+          runAsUser: 101
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp
+        - mountPath: /var/cache/nginx
+          name: nginx-cache
+      securityContext:
+        fsGroup: 101
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+      - emptyDir: {}
+        name: tmp
+      - emptyDir: {}
+        name: nginx-cache
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+  name: pricing
+  namespace: veloshare
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/name: pricing
+  template:
+    metadata:
+      annotations:
+        veloshare.io/environment: dev
+      labels:
+        app.kubernetes.io/instance: veloshare
+        app.kubernetes.io/name: pricing
+    spec:
+      containers:
+      - env:
+        - name: PYTHONDONTWRITEBYTECODE
+          value: "1"
+        envFrom:
+        - configMapRef:
+            name: pricing
+        image: veloshare/pricing:0.1.0
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 2
+        name: pricing
+        ports:
+        - containerPort: 8000
+          name: http
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 2
+        resources:
+          limits:
+            cpu: 150m
+            memory: 192Mi
+          requests:
+            cpu: 25m
+            memory: 96Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 10001
+          runAsNonRoot: true
+          runAsUser: 10001
+        volumeMounts:
+        - mountPath: /var/log/veloshare
+          name: logs
+        - mountPath: /tmp
+          name: tmp
+      - image: nginxinc/nginx-unprivileged:1.27-alpine
+        name: ambassador
+        ports:
+        - containerPort: 8080
+          name: ambassador
+        resources:
+          limits:
+            cpu: 50m
+            memory: 64Mi
+          requests:
+            cpu: 10m
+            memory: 32Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 101
+          runAsNonRoot: true
+          runAsUser: 101
+        volumeMounts:
+        - mountPath: /etc/nginx/conf.d/default.conf
+          name: ambassador-config
+          readOnly: true
+          subPath: default.conf
+        - mountPath: /tmp
+          name: ambassador-tmp
+        - mountPath: /var/cache/nginx
+          name: ambassador-cache
+      - image: fluent/fluent-bit:3.1.9
+        imagePullPolicy: IfNotPresent
+        name: log-agent
+        resources:
+          limits:
+            cpu: 50m
+            memory: 96Mi
+          requests:
+            cpu: 10m
+            memory: 48Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 1000
+          runAsNonRoot: true
+          runAsUser: 1000
+        volumeMounts:
+        - mountPath: /var/log/veloshare
+          name: logs
+          readOnly: true
+        - mountPath: /fluent-bit/etc/
+          name: fluent-bit-config
+      initContainers:
+      - command:
+        - sh
+        - -c
+        - |
+          echo "config check passed: all required env vars present"
+        envFrom:
+        - configMapRef:
+            name: pricing
+        image: alpine:3.20
+        name: config-check
+        resources:
+          limits:
+            cpu: 50m
+            memory: 64Mi
+          requests:
+            cpu: 10m
+            memory: 32Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 65534
+          runAsNonRoot: true
+          runAsUser: 65534
+      - command:
+        - bash
+        - -c
+        - |
+          echo "waiting for rider at ${RIDER_HOST}:${RIDER_PORT} ..."
+          until (exec 3<>/dev/tcp/${RIDER_HOST}/${RIDER_PORT}) 2>/dev/null; do
+            echo "  rider not reachable yet, retrying in 2s"; sleep 2
+          done
+          exec 3>&- 2>/dev/null || true
+          echo "rider is reachable."
+
+          echo "checking database at ${DB_HOST}:${DB_PORT} ..."
+          until pg_isready -h "${DB_HOST}" -p "${DB_PORT}" >/dev/null 2>&1; do
+            echo "  database not accepting connections yet, retrying in 2s"; sleep 2
+          done
+          echo "database is accepting connections. dependencies satisfied."
+        env:
+        - name: RIDER_HOST
+          value: rider
+        - name: RIDER_PORT
+          value: "80"
+        - name: DB_HOST
+          value: postgres
+        - name: DB_PORT
+          value: "5432"
+        image: postgres:16
+        name: wait-for-deps
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 25m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 999
+          runAsNonRoot: true
+          runAsUser: 999
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp
+      securityContext:
+        fsGroup: 10001
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+      - emptyDir: {}
+        name: tmp
+      - configMap:
+          name: pricing-ambassador
+        name: ambassador-config
+      - emptyDir: {}
+        name: ambassador-tmp
+      - emptyDir: {}
+        name: ambassador-cache
+      - emptyDir: {}
+        name: logs
+      - configMap:
+          name: fluent-bit-config
+        name: fluent-bit-config
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: veloshare
+  name: redis
+  namespace: veloshare
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/name: redis
+  template:
+    metadata:
+      annotations:
+        veloshare.io/environment: dev
+      labels:
+        app.kubernetes.io/instance: veloshare
+        app.kubernetes.io/name: redis
+    spec:
+      containers:
+      - image: redis:7-alpine
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          failureThreshold: 3
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 2
+        name: redis
+        ports:
+        - containerPort: 6379
+          name: redis
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          failureThreshold: 3
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 2
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 25m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 999
+          runAsNonRoot: true
+          runAsUser: 999
+        volumeMounts:
+        - mountPath: /data
+          name: data
+      securityContext:
+        fsGroup: 999
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+      - emptyDir: {}
+        name: data
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: rider
+    app.kubernetes.io/part-of: veloshare
+  name: rider
+  namespace: veloshare
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/name: rider
+  template:
+    metadata:
+      annotations:
+        veloshare.io/environment: dev
+      labels:
+        app.kubernetes.io/instance: veloshare
+        app.kubernetes.io/name: rider
+    spec:
+      containers:
+      - env:
+        - name: PYTHONDONTWRITEBYTECODE
+          value: "1"
+        envFrom:
+        - secretRef:
+            name: rider-db
+        - secretRef:
+            name: veloshare-auth
+        image: veloshare/rider:0.1.0
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 2
+        name: rider
+        ports:
+        - containerPort: 8000
+          name: http
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 2
+        resources:
+          limits:
+            cpu: 150m
+            memory: 192Mi
+          requests:
+            cpu: 25m
+            memory: 96Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 10001
+          runAsNonRoot: true
+          runAsUser: 10001
+        volumeMounts:
+        - mountPath: /var/log/veloshare
+          name: logs
+        - mountPath: /tmp
+          name: tmp
+      - image: nginxinc/nginx-unprivileged:1.27-alpine
+        name: ambassador
+        ports:
+        - containerPort: 8080
+          name: ambassador
+        resources:
+          limits:
+            cpu: 50m
+            memory: 64Mi
+          requests:
+            cpu: 10m
+            memory: 32Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 101
+          runAsNonRoot: true
+          runAsUser: 101
+        volumeMounts:
+        - mountPath: /etc/nginx/conf.d/default.conf
+          name: ambassador-config
+          readOnly: true
+          subPath: default.conf
+        - mountPath: /tmp
+          name: ambassador-tmp
+        - mountPath: /var/cache/nginx
+          name: ambassador-cache
+      - image: fluent/fluent-bit:3.1.9
+        imagePullPolicy: IfNotPresent
+        name: log-agent
+        resources:
+          limits:
+            cpu: 50m
+            memory: 96Mi
+          requests:
+            cpu: 10m
+            memory: 48Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 1000
+          runAsNonRoot: true
+          runAsUser: 1000
+        volumeMounts:
+        - mountPath: /var/log/veloshare
+          name: logs
+          readOnly: true
+        - mountPath: /fluent-bit/etc/
+          name: fluent-bit-config
+      initContainers:
+      - command:
+        - sh
+        - -c
+        - |
+          for name in DB_PASSWORD JWT_SECRET ADMIN_EMAIL ADMIN_PASSWORD; do
+            eval "val=\$$name"
+            if [ -z "$val" ]; then
+              echo "config check failed: required env var $name is not set" >&2
+              exit 1
+            fi
+          done
+          echo "config check passed: all required env vars present"
+        envFrom:
+        - secretRef:
+            name: rider-db
+        - secretRef:
+            name: veloshare-auth
+        image: alpine:3.20
+        name: config-check
+        resources:
+          limits:
+            cpu: 50m
+            memory: 64Mi
+          requests:
+            cpu: 10m
+            memory: 32Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 65534
+          runAsNonRoot: true
+          runAsUser: 65534
+      - command:
+        - sh
+        - -c
+        - PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME
+          -v ON_ERROR_STOP=1 -f /migrations/migrate.sql
+        envFrom:
+        - secretRef:
+            name: rider-db
+        image: postgres:16
+        name: migrate
+        resources:
+          limits:
+            cpu: 200m
+            memory: 128Mi
+          requests:
+            cpu: 25m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 999
+          runAsNonRoot: true
+          runAsUser: 999
+        volumeMounts:
+        - mountPath: /migrations
+          name: migration
+        - mountPath: /tmp
+          name: tmp
+      securityContext:
+        fsGroup: 10001
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+      - emptyDir: {}
+        name: tmp
+      - configMap:
+          name: rider-migration
+        name: migration
+      - configMap:
+          name: rider-ambassador
+        name: ambassador-config
+      - emptyDir: {}
+        name: ambassador-tmp
+      - emptyDir: {}
+        name: ambassador-cache
+      - emptyDir: {}
+        name: logs
+      - configMap:
+          name: fluent-bit-config
+        name: fluent-bit-config
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: station
+    app.kubernetes.io/part-of: veloshare
+  name: station
+  namespace: veloshare
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/name: station
+  template:
+    metadata:
+      annotations:
+        veloshare.io/environment: dev
+      labels:
+        app.kubernetes.io/instance: veloshare
+        app.kubernetes.io/name: station
+    spec:
+      containers:
+      - env:
+        - name: PYTHONDONTWRITEBYTECODE
+          value: "1"
+        envFrom:
+        - secretRef:
+            name: station-db
+        image: veloshare/station:0.1.0
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 2
+        name: station
+        ports:
+        - containerPort: 8000
+          name: http
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 2
+        resources:
+          limits:
+            cpu: 150m
+            memory: 192Mi
+          requests:
+            cpu: 25m
+            memory: 96Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 10001
+          runAsNonRoot: true
+          runAsUser: 10001
+        volumeMounts:
+        - mountPath: /var/log/veloshare
+          name: logs
+        - mountPath: /tmp
+          name: tmp
+      - image: nginxinc/nginx-unprivileged:1.27-alpine
+        name: ambassador
+        ports:
+        - containerPort: 8080
+          name: ambassador
+        resources:
+          limits:
+            cpu: 50m
+            memory: 64Mi
+          requests:
+            cpu: 10m
+            memory: 32Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 101
+          runAsNonRoot: true
+          runAsUser: 101
+        volumeMounts:
+        - mountPath: /etc/nginx/conf.d/default.conf
+          name: ambassador-config
+          readOnly: true
+          subPath: default.conf
+        - mountPath: /tmp
+          name: ambassador-tmp
+        - mountPath: /var/cache/nginx
+          name: ambassador-cache
+      - image: fluent/fluent-bit:3.1.9
+        imagePullPolicy: IfNotPresent
+        name: log-agent
+        resources:
+          limits:
+            cpu: 50m
+            memory: 96Mi
+          requests:
+            cpu: 10m
+            memory: 48Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 1000
+          runAsNonRoot: true
+          runAsUser: 1000
+        volumeMounts:
+        - mountPath: /var/log/veloshare
+          name: logs
+          readOnly: true
+        - mountPath: /fluent-bit/etc/
+          name: fluent-bit-config
+      initContainers:
+      - command:
+        - sh
+        - -c
+        - |
+          for name in DB_PASSWORD; do
+            eval "val=\$$name"
+            if [ -z "$val" ]; then
+              echo "config check failed: required env var $name is not set" >&2
+              exit 1
+            fi
+          done
+          echo "config check passed: all required env vars present"
+        envFrom:
+        - secretRef:
+            name: station-db
+        image: alpine:3.20
+        name: config-check
+        resources:
+          limits:
+            cpu: 50m
+            memory: 64Mi
+          requests:
+            cpu: 10m
+            memory: 32Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 65534
+          runAsNonRoot: true
+          runAsUser: 65534
+      - command:
+        - sh
+        - -c
+        - |
+          PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -f /migrations/migrate.sql
+        envFrom:
+        - secretRef:
+            name: station-db
+        image: postgres:16
+        name: migrate
+        resources:
+          limits:
+            cpu: 200m
+            memory: 128Mi
+          requests:
+            cpu: 25m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 999
+          runAsNonRoot: true
+          runAsUser: 999
+        volumeMounts:
+        - mountPath: /migrations
+          name: migration
+          readOnly: true
+        - mountPath: /tmp
+          name: tmp
+      securityContext:
+        fsGroup: 10001
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+      - emptyDir: {}
+        name: tmp
+      - configMap:
+          name: station-migration
+        name: migration
+      - configMap:
+          name: station-ambassador
+        name: ambassador-config
+      - emptyDir: {}
+        name: ambassador-tmp
+      - emptyDir: {}
+        name: ambassador-cache
+      - emptyDir: {}
+        name: logs
+      - configMap:
+          name: fluent-bit-config
+        name: fluent-bit-config
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: trip
+    app.kubernetes.io/part-of: veloshare
+  name: trip
+  namespace: veloshare
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/name: trip
+  template:
+    metadata:
+      annotations:
+        veloshare.io/environment: dev
+      labels:
+        app.kubernetes.io/instance: veloshare
+        app.kubernetes.io/name: trip
+    spec:
+      containers:
+      - env:
+        - name: PYTHONDONTWRITEBYTECODE
+          value: "1"
+        envFrom:
+        - secretRef:
+            name: trip-db
+        - configMapRef:
+            name: trip
+        - secretRef:
+            name: veloshare-auth
+        image: veloshare/trip:0.1.0
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 2
+        name: trip
+        ports:
+        - containerPort: 8000
+          name: http
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 2
+        resources:
+          limits:
+            cpu: 150m
+            memory: 192Mi
+          requests:
+            cpu: 25m
+            memory: 96Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 10001
+          runAsNonRoot: true
+          runAsUser: 10001
+        volumeMounts:
+        - mountPath: /var/log/veloshare
+          name: logs
+        - mountPath: /tmp
+          name: tmp
+      - image: nginxinc/nginx-unprivileged:1.27-alpine
+        name: ambassador
+        ports:
+        - containerPort: 8080
+          name: ambassador
+        resources:
+          limits:
+            cpu: 50m
+            memory: 64Mi
+          requests:
+            cpu: 10m
+            memory: 32Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 101
+          runAsNonRoot: true
+          runAsUser: 101
+        volumeMounts:
+        - mountPath: /etc/nginx/conf.d/default.conf
+          name: ambassador-config
+          readOnly: true
+          subPath: default.conf
+        - mountPath: /tmp
+          name: ambassador-tmp
+        - mountPath: /var/cache/nginx
+          name: ambassador-cache
+      - image: fluent/fluent-bit:3.1.9
+        imagePullPolicy: IfNotPresent
+        name: log-agent
+        resources:
+          limits:
+            cpu: 50m
+            memory: 96Mi
+          requests:
+            cpu: 10m
+            memory: 48Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 1000
+          runAsNonRoot: true
+          runAsUser: 1000
+        volumeMounts:
+        - mountPath: /var/log/veloshare
+          name: logs
+          readOnly: true
+        - mountPath: /fluent-bit/etc/
+          name: fluent-bit-config
+      initContainers:
+      - command:
+        - sh
+        - -c
+        - |
+          for name in DB_PASSWORD JWT_SECRET; do
+            eval "val=\$$name"
+            if [ -z "$val" ]; then
+              echo "config check failed: required env var $name is not set" >&2
+              exit 1
+            fi
+          done
+          echo "config check passed: all required env vars present"
+        envFrom:
+        - secretRef:
+            name: trip-db
+        - configMapRef:
+            name: trip
+        - secretRef:
+            name: veloshare-auth
+        image: alpine:3.20
+        name: config-check
+        resources:
+          limits:
+            cpu: 50m
+            memory: 64Mi
+          requests:
+            cpu: 10m
+            memory: 32Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 65534
+          runAsNonRoot: true
+          runAsUser: 65534
+      - command:
+        - sh
+        - -c
+        - PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME
+          -f /migrations/migrate.sql
+        envFrom:
+        - secretRef:
+            name: trip-db
+        image: postgres:16
+        name: migrate
+        resources:
+          limits:
+            cpu: 200m
+            memory: 128Mi
+          requests:
+            cpu: 25m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 999
+          runAsNonRoot: true
+          runAsUser: 999
+        volumeMounts:
+        - mountPath: /migrations
+          name: migration
+        - mountPath: /tmp
+          name: tmp
+      securityContext:
+        fsGroup: 10001
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+      - emptyDir: {}
+        name: tmp
+      - configMap:
+          name: trip-migration
+        name: migration
+      - configMap:
+          name: trip-ambassador
+        name: ambassador-config
+      - emptyDir: {}
+        name: ambassador-tmp
+      - emptyDir: {}
+        name: ambassador-cache
+      - emptyDir: {}
+        name: logs
+      - configMap:
+          name: fluent-bit-config
+        name: fluent-bit-config
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/part-of: veloshare
+  name: postgres
+  namespace: veloshare
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: veloshare
+      app.kubernetes.io/name: postgres
+  serviceName: postgres
+  template:
+    metadata:
+      annotations:
+        veloshare.io/environment: dev
+      labels:
+        app.kubernetes.io/instance: veloshare
+        app.kubernetes.io/name: postgres
+    spec:
+      containers:
+      - env:
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        envFrom:
+        - secretRef:
+            name: postgres
+        image: postgres:16
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - postgres
+            - -d
+            - veloshare
+          failureThreshold: 3
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+        name: postgres
+        ports:
+        - containerPort: 5432
+          name: postgres
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - postgres
+            - -d
+            - veloshare
+          failureThreshold: 3
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 192Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 999
+          runAsNonRoot: true
+          runAsUser: 999
+        volumeMounts:
+        - mountPath: /var/lib/postgresql/data
+          name: data
+        - mountPath: /docker-entrypoint-initdb.d
+          name: init-sql
+          readOnly: true
+        - mountPath: /var/run/postgresql
+          name: run
+        - mountPath: /tmp
+          name: tmp
+      securityContext:
+        fsGroup: 999
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+      - configMap:
+          defaultMode: 493
+          name: postgres-init
+        name: init-sql
+      - emptyDir: {}
+        name: run
+      - emptyDir: {}
+        name: tmp
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 1Gi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: fleet-monitor
+    app.kubernetes.io/part-of: veloshare
+  name: fleet-monitor
+  namespace: veloshare
+spec:
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    metadata:
+      annotations:
+        veloshare.io/environment: dev
+    spec:
+      template:
+        metadata:
+          annotations:
+            veloshare.io/environment: dev
+          labels:
+            app.kubernetes.io/instance: veloshare
+            app.kubernetes.io/name: fleet-monitor
+        spec:
+          containers:
+          - command:
+            - sh
+            - -c
+            - |
+              set -o pipefail
+              /usr/local/bin/report.sh | tee "/reports/report-$(date -u +%F).log"
+            env:
+            - name: DB_HOST
+              value: postgres
+            - name: DB_PORT
+              value: "5432"
+            envFrom:
+            - secretRef:
+                name: postgres
+            image: veloshare/fleet-monitor:0.1.0
+            imagePullPolicy: IfNotPresent
+            name: fleet-monitor
+            resources:
+              limits:
+                cpu: 100m
+                memory: 128Mi
+              requests:
+                cpu: 25m
+                memory: 64Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                - ALL
+              readOnlyRootFilesystem: true
+              runAsGroup: 10001
+              runAsNonRoot: true
+              runAsUser: 10001
+            volumeMounts:
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /reports
+              name: reports
+          restartPolicy: Never
+          securityContext:
+            fsGroup: 10001
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          volumes:
+          - emptyDir: {}
+            name: tmp
+          - name: reports
+            persistentVolumeClaim:
+              claimName: fleet-monitor-reports
+      ttlSecondsAfterFinished: 86400
+  schedule: 0 0 * * *
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/component: rbac-demo
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: veloshare
+    app.kubernetes.io/part-of: veloshare
+  name: pod-lister
+  namespace: veloshare
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    metadata:
+      annotations:
+        veloshare.io/environment: dev
+    spec:
+      template:
+        metadata:
+          annotations:
+            veloshare.io/environment: dev
+          labels:
+            app.kubernetes.io/component: rbac-demo
+            app.kubernetes.io/instance: veloshare
+            app.kubernetes.io/name: veloshare
+        spec:
+          automountServiceAccountToken: true
+          containers:
+          - image: veloshare/pod-lister:0.1.0
+            imagePullPolicy: IfNotPresent
+            name: pod-lister
+            resources:
+              limits:
+                cpu: 100m
+                memory: 64Mi
+              requests:
+                cpu: 10m
+                memory: 32Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                - ALL
+              readOnlyRootFilesystem: true
+              runAsGroup: 10001
+              runAsNonRoot: true
+              runAsUser: 10001
+            volumeMounts:
+            - mountPath: /tmp
+              name: tmp
+          restartPolicy: Never
+          securityContext:
+            fsGroup: 10001
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: pod-lister
+          volumes:
+          - emptyDir: {}
+            name: tmp
+  schedule: '*/5 * * * *'
+  successfulJobsHistoryLimit: 3
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+  name: pricing
+  namespace: veloshare
+spec:
+  maxReplicas: 5
+  metrics:
+  - resource:
+      name: cpu
+      target:
+        averageUtilization: 70
+        type: Utilization
+    type: Resource
+  minReplicas: 1
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: pricing
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: veloshare
+    app.kubernetes.io/part-of: veloshare
+  name: veloshare
+  namespace: veloshare
+spec:
+  ingressClassName: nginx
+  rules:
+  - http:
+      paths:
+      - backend:
+          service:
+            name: frontend
+            port:
+              number: 80
+        path: /
+        pathType: Prefix
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /healthz
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: veloshare
+    app.kubernetes.io/part-of: veloshare
+  name: veloshare-api
+  namespace: veloshare
+spec:
+  ingressClassName: nginx
+  rules:
+  - http:
+      paths:
+      - backend:
+          service:
+            name: rider
+            port:
+              number: 80
+        path: /api/healthz
+        pathType: Exact
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    veloshare.io/environment: dev
+  labels:
+    app.kubernetes.io/instance: veloshare
+    app.kubernetes.io/name: veloshare
+    app.kubernetes.io/part-of: veloshare
+  name: backend-isolation
+  namespace: veloshare
+spec:
+  egress:
+  - ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+  - ports:
+    - port: 5432
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: postgres
+  - ports:
+    - port: 6379
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: redis
+  - ports:
+    - port: 8080
+      protocol: TCP
+    - port: 8000
+      protocol: TCP
+    to:
+    - podSelector:
+        matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: In
+          values:
+          - rider
+          - station
+          - trip
+          - pricing
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: frontend
+    - podSelector:
+        matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: In
+          values:
+          - rider
+          - station
+          - trip
+          - pricing
+    ports:
+    - port: 8080
+      protocol: TCP
+    - port: 8000
+      protocol: TCP
+  podSelector:
+    matchExpressions:
+    - key: app.kubernetes.io/name
+      operator: In
+      values:
+      - rider
+      - station
+      - trip
+      - pricing
+  policyTypes:
+  - Ingress
+  - Egress

@@ -1,0 +1,75 @@
+# Lab 5.2 — a container guaranteed to crash 5s after every start, so there
+# is always a genuine "previous" instance to inspect with
+# `kubectl logs --previous`. Without a container that has actually died and
+# been restarted, --previous has nothing to show and the flag is just
+# theory.
+#
+# Overrides the pricing image's normal entrypoint with an inline Python
+# script instead of uvicorn: it prints a startup line, sleeps 5s (long
+# enough to be visibly "up" for a moment -- readiness/liveness are not even
+# needed to see the crash cycle), then writes to stderr and exits 1.
+# restartPolicy: Always (the Pod default) means the kubelet restarts it
+# forever, with an exponential backoff -- CrashLoopBackOff.
+#
+# EXPECTED SYMPTOM:
+#   $ kubectl -n veloshare-lab get pod lab-crashloop
+#   NAME            READY   STATUS             RESTARTS      AGE
+#   lab-crashloop   0/1     CrashLoopBackOff   3 (25s ago)   2m
+#
+# RESTARTS keeps climbing and the backoff delay between attempts keeps
+# doubling (10s, 20s, 40s, ... capped at 5m). STATUS cycles through
+# Running -> Error -> CrashLoopBackOff as the kubelet retries.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lab-crashloop
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "5.2"
+spec:
+  restartPolicy: Always
+  securityContext:
+    runAsNonRoot: true
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: pricing
+      image: veloshare/pricing:0.1.0
+      imagePullPolicy: IfNotPresent
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        capabilities:
+          drop:
+            - ALL
+      command:
+        - python
+        - -c
+        - "import sys,time; print('starting up', flush=True); time.sleep(5); print('fatal: simulated crash', file=sys.stderr, flush=True); sys.exit(1)"
+      env:
+        - name: PYTHONDONTWRITEBYTECODE
+          value: "1"
+      volumeMounts:
+        - name: logs
+          mountPath: /var/log/veloshare
+        - name: tmp
+          mountPath: /tmp
+      resources:
+        requests:
+          cpu: 25m
+          memory: 96Mi
+        limits:
+          cpu: 150m
+          memory: 192Mi
+  volumes:
+    - name: logs
+      emptyDir: {}
+    - name: tmp
+      emptyDir: {}

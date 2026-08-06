@@ -1,0 +1,96 @@
+# Lab 3.2 — the four hardening settings the CKAD curriculum asks for, on a real
+# VeloShare service. This is the same baseline the whole platform runs under:
+# helm/veloshare/templates/_helpers.tpl defines veloshare.podSecurityContext and
+# veloshare.containerSecurityContext, and every Pod in the chart includes them.
+# Here they are spelled out literally so you can read them without Helm.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lab-hardened
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "3.2"
+spec:
+  # ---- Pod-level: applies to every container in the Pod -------------------
+  securityContext:
+    # Refuse to start any container whose image would run as UID 0. Note this
+    # is a *check*, not a change: it does not pick a user for you. The image
+    # must already have a non-root USER (services/pricing/Dockerfile does:
+    # `useradd --uid 10001`), or you must set runAsUser yourself.
+    runAsNonRoot: true
+    # Supplemental group that owns mounted volumes, so a non-root process can
+    # write to them.
+    fsGroup: 10001
+    # Restrict syscalls to the container runtime's default allow-list.
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: pricing
+      image: veloshare/pricing:0.1.0
+      imagePullPolicy: IfNotPresent
+      # ---- Container-level: the CKAD "lockdown" four -----------------------
+      securityContext:
+        # A process cannot gain more privileges than its parent (blocks setuid
+        # binaries and file capabilities from escalating).
+        allowPrivilegeEscalation: false
+        # The image's filesystem is mounted read-only. Anything the process
+        # needs to write must come in as an explicit volume — see below.
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        # Required, and this is the subtle part. services/pricing/Dockerfile
+        # ends with `USER appuser` -- a NAME. runAsNonRoot is evaluated by the
+        # kubelet, which has no way to resolve a username to a UID before the
+        # container exists, so a named USER cannot be verified as non-root and
+        # every container dies with:
+        #   container has runAsNonRoot and image has non-numeric user
+        #   (appuser), cannot verify user is non-root
+        # Supplying the UID numerically is what makes the check satisfiable.
+        runAsUser: 10001
+        runAsGroup: 10001
+        capabilities:
+          # Drop every Linux capability. Verify with:
+          #   grep CapEff /proc/self/status   ->  0000000000000000
+          drop:
+            - ALL
+      ports:
+        - name: http
+          containerPort: 8000
+      volumeMounts:
+        # readOnlyRootFilesystem forces you to be explicit about every writable
+        # path. pricing needs exactly two: its JSON log file, and /tmp.
+        - name: logs
+          mountPath: /var/log/veloshare
+        - name: tmp
+          mountPath: /tmp
+      env:
+        # Without this, Python tries to write .pyc files next to the source
+        # under /app — which is now read-only.
+        - name: PYTHONDONTWRITEBYTECODE
+          value: "1"
+      livenessProbe:
+        httpGet:
+          path: /healthz
+          port: 8000
+        initialDelaySeconds: 5
+        periodSeconds: 10
+      readinessProbe:
+        httpGet:
+          path: /healthz
+          port: 8000
+        initialDelaySeconds: 5
+        periodSeconds: 10
+      resources:
+        requests:
+          cpu: 25m
+          memory: 96Mi
+        limits:
+          cpu: 150m
+          memory: 192Mi
+  volumes:
+    - name: logs
+      emptyDir: {}
+    - name: tmp
+      emptyDir: {}

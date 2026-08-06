@@ -1,0 +1,25 @@
+lab-pricing has been installed/upgraded as release "{{ .Release.Name }}" in
+namespace {{ .Release.Namespace }} (revision {{ .Release.Revision }}).
+
+Check the release:
+
+  helm -n {{ .Release.Namespace }} status {{ .Release.Name }}
+  helm -n {{ .Release.Namespace }} list
+  kubectl -n {{ .Release.Namespace }} get deploy,cm,svc -l app.kubernetes.io/instance={{ .Release.Name }}
+
+See the fare tiers this revision is actually serving (proof of which values
+are live, not just what's in values.yaml):
+
+  kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "lab-pricing.fullname" . }} -- \
+    python -c "import urllib.request,json; print(json.load(urllib.request.urlopen('http://127.0.0.1:{{ .Values.containerPort }}/tiers')))"
+
+Upgrade with overrides:
+
+  helm -n {{ .Release.Namespace }} upgrade {{ .Release.Name }} <path-to-this-chart> \
+    --set fare.unlockFeeCents=375 --set replicaCount=2
+
+Roll back to a previous revision (a rollback creates a NEW revision, it does
+not delete history):
+
+  helm -n {{ .Release.Namespace }} history {{ .Release.Name }}
+  helm -n {{ .Release.Namespace }} rollback {{ .Release.Name }} <revision>

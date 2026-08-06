@@ -1,0 +1,42 @@
+# Default values for lab-pricing. Override with -f or --set at install/
+# upgrade time -- the README Verify walkthrough does the latter, since it
+# only needs to change two values to prove a rollback works.
+
+# Number of Deployment replicas. Bumped to 2 in the README's upgrade step so
+# the rollback demo also proves replica count reverts, not just config.
+replicaCount: 1
+
+image:
+  # The platform's own pricing image, unmodified -- see services/pricing/.
+  repository: veloshare/pricing
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+service:
+  # ClusterIP Service port. targetPort is always containerPort below --
+  # this lab has no ambassador sidecar, unlike the real platform chart.
+  port: 80
+
+# The port the pricing container actually listens on (uvicorn --port 8000,
+# see services/pricing/Dockerfile). Also what the probes hit.
+containerPort: 8000
+
+fare:
+  # Rendered into the ConfigMap as PRICING_UNLOCK_FEE_CENTS /
+  # PRICING_TIER_RATES (services/pricing/main.py reads both, with these
+  # exact values as its own code-level defaults). --set fare.unlockFeeCents=375
+  # in the README's upgrade step is what makes the upgrade observable
+  # through GET /tiers.
+  unlockFeeCents: 100
+  tierRatesJson: '{"standard": 15, "member": 8, "day_pass": 5}'
+
+# Same numbers as every other pricing manifest in this repo (see
+# lab/day3, lab/day4, helm/veloshare/charts/pricing/values.yaml) --
+# 25m/96Mi request, 150m/192Mi limit.
+resources:
+  requests:
+    cpu: 25m
+    memory: 96Mi
+  limits:
+    cpu: 150m
+    memory: 192Mi

@@ -1,0 +1,123 @@
+# Lab 5.3, pair 2 (broken) — the classic "Service has Endpoints but nothing
+# works". The Deployment here is entirely correct: the selector matches the
+# template labels, the Pod comes up 1/1, and the Service's selector matches
+# the Pod, so Endpoints ARE populated. Nothing about admission or scheduling
+# complains. The only thing wrong is the Service's targetPort: 8080, while
+# the pricing container actually listens on 8000 (services/pricing/Dockerfile
+# EXPOSE 8000) -- so every connection the Service forwards lands on a closed
+# port inside the Pod and hangs or resets.
+#
+# EXPECTED SYMPTOM:
+#   $ kubectl -n veloshare-lab get endpoints lab-triage-port
+#   NAME               ENDPOINTS           AGE
+#   lab-triage-port    10.244.x.x:8080     30s      <-- populated! selector is fine
+#
+#   $ kubectl -n veloshare-lab run curltest --rm -it --restart=Never \
+#       --image=veloshare/pricing:0.1.0 -- python -c \
+#       "import urllib.request; urllib.request.urlopen('http://lab-triage-port/healthz', timeout=3)"
+#   ... urllib.error.URLError: <urlopen error [Errno 111] Connection refused>
+#
+# The trap: `get endpoints` looking healthy is exactly why people stop
+# debugging here. Endpoints only prove the SELECTOR is right; they say
+# nothing about whether targetPort is the port the container is actually
+# listening on.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lab-triage-port
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "5.3"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: pricing
+      app.kubernetes.io/instance: lab-triage-port
+      lab: "5.3"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: pricing
+        app.kubernetes.io/part-of: veloshare
+        app.kubernetes.io/component: ckad-lab
+        app.kubernetes.io/instance: lab-triage-port
+        lab: "5.3"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: pricing
+          image: veloshare/pricing:0.1.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          volumeMounts:
+            - name: logs
+              mountPath: /var/log/veloshare
+            - name: tmp
+              mountPath: /tmp
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 25m
+              memory: 96Mi
+            limits:
+              cpu: 150m
+              memory: 192Mi
+      volumes:
+        - name: logs
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lab-triage-port
+  namespace: veloshare-lab
+  labels:
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: veloshare
+    app.kubernetes.io/component: ckad-lab
+    lab: "5.3"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/instance: lab-triage-port
+    lab: "5.3"
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080   # <-- bug: container listens on 8000, not 8080
